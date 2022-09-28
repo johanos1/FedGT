@@ -4,11 +4,13 @@ import torch.nn as tn
 from torchvision.transforms import ToTensor
 from torch.utils.data import random_split, DataLoader
 import torch.nn.functional as F
+import copy
 from loguru import logger
+from ctypes import *
 
 input_size = 28*28  #Size of image
 num_classes = 10  #the image number are in range 0-10
-num_epochs = 5 #one cycle through the full train data
+num_epochs = 1
 batch_size = 100 #sample size consider before updating the model’s weights
 learning_rate = 0.001  #step size to update parameter
 
@@ -35,6 +37,11 @@ class LogisticRegression(tn.Module):
         feature = feature.reshape(-1, 784) # flatten because tensor is 1x28x28
         output = self.linear(feature)
         return output
+    
+    def get_gradients(self):
+        gradient_list = []
+        for item in self.parameters():
+            gradient_list.append(copy.deepcopy(item.grad))
 
     def training_step(self, batch):
         images, labels = batch 
@@ -71,7 +78,7 @@ def evaluate(model, val_loader):
 def fit(epochs, lr, model, train_loader, val_loader, opt_func=torch.optim.SGD):
     optimizer = opt_func(model.parameters(), lr)
     for epoch in range(epochs):
-        # Training Phase 
+        # Training Phase (go through all batches)
         for batch in train_loader:
             loss = model.training_step(batch)
             loss.backward()
@@ -102,3 +109,8 @@ def main():
 
 if __name__ == "__main__":
     main()    
+    
+    # Test calling c file
+    so_file = "./my_functions.so"
+    my_functions = CDLL(so_file)
+    print(my_functions.square(10))
