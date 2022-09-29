@@ -15,30 +15,17 @@ batch_size = 100  # sample size consider before updating the model’s weights
 learning_rate = 0.001  # step size to update parameter
 
 
-class LogisticRegression(tn.Module):
+class MultinomialLogisticRegression(tn.Module):
 
     def __init__(self, input_size, num_classes):
         super().__init__()
-        self.linear = tn.Linear(input_size, num_classes)
-        self.optimizer = None
-        self.loss_fn = None
-        self.train_loader = None
-        self.test_loader = None
-
-    def set_optimizer(self, optimizer):
-        self.optimizer = optimizer
-
-    def set_loss_fn(self, loss_fn):
-        self.loss_fn = loss_fn
-
-    def set_dataloaders(self, train_loader, test_loader):
-        self.train_loader = train_loader
-        self.test_loader = test_loader
+        self.linear = tn.Linear(input_size, num_classes, bias=False)
 
     def forward(self, feature):
         feature = feature.reshape(-1, 784)  # flatten because tensor is 1x28x28
         output = self.linear(feature)
-        return output
+        
+        return torch.softmax(output)
 
     def get_gradients(self):
         gradient_list = []
@@ -48,7 +35,7 @@ class LogisticRegression(tn.Module):
     def training_step(self, batch):
         images, labels = batch
         out = self(images)                  # Generate predictions
-        loss = F.cross_entropy(out, labels)  # Calculate loss
+        loss = F.cross_entropy(out, labels)  # Calculate loss. Note: cross entropy first computes a softmax and then the crossentropy
         return loss
 
     def validation_step(self, batch):
@@ -109,7 +96,7 @@ def main():
     test_loader = DataLoader(test_ds, batch_size)
 
     #  Create model and attach loss function and optimizer
-    model = LogisticRegression(input_size, num_classes)
+    model = MultinomialLogisticRegression(input_size, num_classes)
     fit(num_epochs, learning_rate, model, train_loader, val_loader)
     test_result = evaluate(model, test_loader)
     accuracy = test_result['acc']
