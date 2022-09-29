@@ -1,7 +1,7 @@
 import torch
-import torchvision
+import torchvision #type: ignore
 import torch.nn as tn
-from torchvision.transforms import ToTensor
+from torchvision.transforms import ToTensor #type: ignore
 from torch.utils.data import random_split, DataLoader
 import torch.nn.functional as F
 import copy
