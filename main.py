@@ -120,6 +120,6 @@ if __name__ == "__main__":
     main()
 
     #  Test calling c file
-    so_file = "./my_functions.so"
+    so_file = "./src/C_code/my_functions.so"
     my_functions = CDLL(so_file)
     print(my_functions.square(10))

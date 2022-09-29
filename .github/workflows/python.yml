@@ -33,13 +33,13 @@ jobs:
         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=120 --statistics
     - name: Check types with mypy
-      run: mypy main.py
+      run: mypy main.py #src
 
-    - name: Documentation
-      run: cd docs && make html
+    # - name: Documentation
+    #   run: cd docs && make html
 
-    - name: Deploy documentation
-      uses: peaceiris/actions-gh-pages@v3
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./docs/_build/html
+    # - name: Deploy documentation
+    #   uses: peaceiris/actions-gh-pages@v3
+    #   with:
+    #     github_token: ${{ secrets.GITHUB_TOKEN }}
+    #     publish_dir: ./docs/_build/html
