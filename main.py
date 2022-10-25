@@ -11,6 +11,7 @@ import logging
 import os
 from collections import defaultdict
 import time
+from ctypes import *
 
 # methods
 import methods.fedavg as fedavg
@@ -111,6 +112,12 @@ def set_random_seed(seed=1):
     # torch.backends.cudnn.benchmark = False
     
 if __name__ == "__main__":
+    
+    # Test calling c file
+    so_file = "./src/C_code/my_functions.so"
+    my_functions = CDLL(so_file)
+    print(my_functions.square(10))
+    
     try:
         set_start_method('spawn')
     except RuntimeError:
