@@ -5,7 +5,7 @@ import random
 import data_preprocessing.data_loader as dl
 import argparse
 from models.resnet import resnet56, resnet18
-from models.multinomial_log_reg import multi_nomial_regression
+from models.logistic_regression import logistic_regression
 from torch.multiprocessing import set_start_method, Queue
 import logging
 import os
@@ -65,7 +65,7 @@ def add_args(parser):
     parser.add_argument('--partition_alpha', type=float, default=0.5, metavar='PA',
                         help='alpha value for Dirichlet distribution partitioning of data(default: 0.5)')
 
-    parser.add_argument('--client_number', type=int, default=32, metavar='NN',
+    parser.add_argument('--client_number', type=int, default=2, metavar='NN',
                         help='number of clients in the FL system')
 
     parser.add_argument('--batch_size', type=int, default=64, metavar='N',
@@ -88,7 +88,7 @@ def add_args(parser):
     parser.add_argument('--save_client', action='store_true', default=False,
                         help='Save client checkpoints each round')
 
-    parser.add_argument('--thread_number', type=int, default=16, metavar='NN',
+    parser.add_argument('--thread_number', type=int, default=2, metavar='NN',
                         help='number of parallel training threads')
 
     parser.add_argument('--client_sample', type=float, default=1.0, metavar='MT',
@@ -137,7 +137,7 @@ if __name__ == "__main__":
         Server = fedavg.Server
         Client = fedavg.Client
         #Model = resnet56 if 'cifar' in args.data_dir else resnet18
-        Model = multi_nomial_regression
+        Model = logistic_regression
         server_dict = {'train_data':train_data_global, 'test_data': test_data_global, 'model_type': Model, 'num_classes': class_num}
         client_dict = [{'train_data':train_data_local_dict, 'test_data': test_data_local_dict,  
                         'device': 'cuda:{}'.format(i % torch.cuda.device_count()) if torch.cuda.is_available() else "cpu",
