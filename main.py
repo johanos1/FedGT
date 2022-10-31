@@ -40,13 +40,15 @@ if __name__ == "__main__":
 
     # Set parameters
     args = DotMap()
-    args.method = "fedsgd"
-    args.data_dir = "data/fashionmnist"  # data/cifar100, data/cifar10, data/mnist, data/fashionmnist
+    args.method = "fedavg"  # fedavg, fedsgd
+    args.data_dir = (
+        "data/mnist"  # data/cifar100, data/cifar10, data/mnist, data/fashionmnist
+    )
     args.partition_method = "homo"  # homo, hetero
     args.partition_alpha = 0.1  # in (0,1]
     args.client_number = 2
     args.batch_size = 64
-    args.lr = 0.01
+    args.lr = 0.0001
     args.wd = 0.0001
     args.epochs = 1
     args.comm_round = 10
@@ -72,7 +74,10 @@ if __name__ == "__main__":
         args.batch_size,
     )
     # Model = resnet56 if 'cifar' in args.data_dir else resnet18
-    Model = logistic_regression
+    if "cifar" in args.data_dir:
+        Model = resnet18
+    elif "mnist" in args.data_dir:
+        Model = logistic_regression
 
     # init method and model type
     if args.method == "fedavg":
@@ -139,3 +144,4 @@ if __name__ == "__main__":
         server_outputs = server.run(client_outputs)
         round_end = time.time()
         logging.info("Round {} Time: {}s".format(r, round_end - round_start))
+        logging.info("-------------------------------------------------------")

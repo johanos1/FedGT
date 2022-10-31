@@ -40,17 +40,11 @@ class Base_Client:
             self.load_client_state_dict(received_info)
             self.train_dataloader = self.train_data[client_idx]
             self.test_dataloader = self.test_data[client_idx]
-            if (
-                self.args.client_sample < 1.0
-                and self.train_dataloader._iterator is not None
-                and self.train_dataloader._iterator._shutdown
-            ):
-                self.train_dataloader._iterator = self.train_dataloader._get_iterator()
             self.client_index = client_idx
             num_samples = len(self.train_dataloader) * self.args.batch_size
 
             if self.args.method == "fedavg":
-                weights = self.train()
+                weights = self.train_model()
                 acc = self.test()
                 client_results.append(
                     {
@@ -60,31 +54,29 @@ class Base_Client:
                         "client_index": self.client_index,
                     }
                 )
-                if (
-                    self.args.client_sample < 1.0
-                    and self.train_dataloader._iterator is not None
-                ):
-                    self.train_dataloader._iterator._shutdown_workers()
+
             elif self.args.method == "fedsgd":
-                gradients = self.get_gradients()
+                gradients = self.train_gradient()
+                # acc = self.test()
+                acc = 0
                 client_results.append(
                     {
                         "gradients": gradients,
                         "num_samples": num_samples,
+                        "acc": acc,
                         "client_index": self.client_index,
                     }
                 )
-                if (
-                    self.args.client_sample < 1.0
-                    and self.train_dataloader._iterator is not None
-                ):
-                    self.train_dataloader._iterator._shutdown_workers()
+
         self.round += 1
         return client_results
 
-    def get_gradients(self):
+    def train_gradient(self):
+        # move model to GPU if used
         self.model.to(self.device)
+        # enable training mode
         self.model.train()
+
         epoch_loss = []
         for epoch in range(self.args.epochs):
             batch_loss = []
@@ -92,25 +84,25 @@ class Base_Client:
                 images, labels = images.to(self.device), labels.to(self.device)
                 log_probs = self.model(images)
                 loss = self.criterion(log_probs, labels)
-                loss.backward()
+                loss.backward()  # accumulate gradients
                 batch_loss.append(loss.item())
             if len(batch_loss) > 0:
                 epoch_loss.append(sum(batch_loss) / len(batch_loss))
-            logging.info(
-                "(client {}. Local Training Epoch: {} \tLoss: {:.6f}".format(
-                    self.client_index,
-                    epoch,
-                    sum(epoch_loss) / len(epoch_loss),
+                logging.info(
+                    "(client {}. Local Training Epoch: {} \tLoss: {:.6f}".format(
+                        self.client_index,
+                        epoch,
+                        sum(epoch_loss) / len(epoch_loss),
+                    )
                 )
-            )
 
         grads = {}
         for name, param in self.model.named_parameters():
-            grads[name] = param.grad / len(self.train_dataloader.dataset)
+            grads[name] = param.grad
 
         return grads
 
-    def train(self):
+    def train_model(self):
         # train the local model
         self.model.to(self.device)
         self.model.train()
@@ -237,36 +229,31 @@ class Base_Server:
         return [self.model.cpu().state_dict() for x in range(self.args.thread_number)]
 
     def log_info(self, client_info, acc):
-        if self.args.method == "fedavg":
-            client_acc = sum([c["acc"] for c in client_info]) / len(client_info)
-            out_str = "Test/AccTop1: {}, Client_Train/AccTop1: {}, round: {}\n".format(
-                acc, client_acc, self.round
-            )
-            with open("{}/out.log".format(self.save_path), "a+") as out_file:
-                out_file.write(out_str)
+
+        client_acc = sum([c["acc"] for c in client_info]) / len(client_info)
+        out_str = "Test/AccTop1: {}, Client_Train/AccTop1: {}, round: {}\n".format(
+            acc, client_acc, self.round
+        )
+        with open("{}/out.log".format(self.save_path), "a+") as out_file:
+            out_file.write(out_str)
 
     def aggregate_gradients(self, client_info):
 
         # accumulate all gradients
         total_grads = {}
-        n_total_samples = 0
+        n_total_samples = sum([x["num_samples"] for x in client_info])
         for info in client_info:
             # get number of samples at current client
             n_samples = info["num_samples"]
             # Loop over the gradients
             for k, v in info["gradients"].items():
+                # update total gradients for layer k
+                w = n_samples / n_total_samples
                 # if the layer does not exist, add to dictionary
                 if k not in total_grads:
-                    total_grads[k] = v
-                # update total gradients for layer k
-                total_grads[k] += v * n_samples
-            # get total number of samples
-            n_total_samples += n_samples
-
-        gradients = {}
-        # loop over layers and accumulated gradients and divide by total number of samples
-        for k, v in total_grads.items():
-            gradients[k] = torch.div(v, n_total_samples)
+                    total_grads[k] = torch.mul(v, w)
+                else:
+                    total_grads[k] += torch.mul(v, w)
 
         # Update the global model with aggregate gradients
         # change to training mode
@@ -275,7 +262,7 @@ class Base_Server:
         self.optimizer.zero_grad()
         # replace all gradients in model with the aggregated gradients
         for k, v in self.model.named_parameters():
-            v.grad = gradients[k]
+            v.grad = total_grads[k]
         # perform gradient descent step
         self.optimizer.step()
 
