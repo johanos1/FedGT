@@ -14,7 +14,7 @@ from ctypes import *
 
 # methods
 import methods.fedavg as fedavg
-
+import methods.fedsgd as fedsgd
 
 # Setup Functions
 def set_random_seed(seed=1):
@@ -40,7 +40,7 @@ if __name__ == "__main__":
 
     # Set parameters
     args = DotMap()
-    args.method = "fedavg"
+    args.method = "fedsgd"
     args.data_dir = "data/fashionmnist"  # data/cifar100, data/cifar10, data/mnist, data/fashionmnist
     args.partition_method = "homo"  # homo, hetero
     args.partition_alpha = 0.1  # in (0,1]
@@ -49,7 +49,7 @@ if __name__ == "__main__":
     args.lr = 0.01
     args.wd = 0.0001
     args.epochs = 1
-    args.comm_round = 1
+    args.comm_round = 10
     args.pretrained = False
     args.client_sample = 1.0
     args.thread_number = 1
@@ -76,55 +76,57 @@ if __name__ == "__main__":
 
     # init method and model type
     if args.method == "fedavg":
-        # ----------------------------------------
-        # Prepare client info
         Client = fedavg.Client
-
-        mapping_dict = defaultdict(list)
-        for round in range(args.comm_round):
-            num_clients = args.client_number
-            for i, c in enumerate(range(num_clients)):
-                mapping_dict[c].append([i])
-
-        client_dict = [
-            {
-                "train_data": train_data_local_dict,
-                "test_data": test_data_local_dict,
-                "device": "cuda:{}".format(1) if torch.cuda.is_available() else "cpu",
-                "client_map": mapping_dict[i],
-                "model_type": Model,
-                "num_classes": class_num,
-            }
-            for i in range(args.client_number)
-        ]
-
-        # init clients
-        clients = []
-        for c in client_dict:
-            clients.append(Client(c, args))
-
-        # ----------------------------------------
-        # Prepare Server info
         Server = fedavg.Server
-        server_dict = {
-            "train_data": train_data_global,
-            "test_data": test_data_global,
+
+    elif args.method == "fedsgd":
+        Client = fedsgd.Client
+        Server = fedsgd.Server
+
+    mapping_dict = defaultdict(list)
+    for round in range(args.comm_round):
+        num_clients = args.client_number
+        for i, c in enumerate(range(num_clients)):
+            mapping_dict[c].append([i])
+
+    client_dict = [
+        {
+            "train_data": train_data_local_dict,
+            "test_data": test_data_local_dict,
+            "device": "cuda:{}".format(1) if torch.cuda.is_available() else "cpu",
+            "client_map": mapping_dict[i],
             "model_type": Model,
             "num_classes": class_num,
         }
+        for i in range(args.client_number)
+    ]
 
-        # init server
-        server_dict["save_path"] = "{}/logs/{}__{}_e{}_c{}".format(
-            os.getcwd(),
-            time.strftime("%Y%m%d_%H%M%S"),
-            args.method,
-            args.epochs,
-            args.client_number,
-        )
-        if not os.path.exists(server_dict["save_path"]):
-            os.makedirs(server_dict["save_path"])
-        server = Server(server_dict, args)
-        server_outputs = server.start()
+    # init clients
+    clients = []
+    for c in client_dict:
+        clients.append(Client(c, args))
+
+    # ----------------------------------------
+    # Prepare Server info
+    server_dict = {
+        "train_data": train_data_global,
+        "test_data": test_data_global,
+        "model_type": Model,
+        "num_classes": class_num,
+    }
+
+    # init server
+    server_dict["save_path"] = "{}/logs/{}__{}_e{}_c{}".format(
+        os.getcwd(),
+        time.strftime("%Y%m%d_%H%M%S"),
+        args.method,
+        args.epochs,
+        args.client_number,
+    )
+    if not os.path.exists(server_dict["save_path"]):
+        os.makedirs(server_dict["save_path"])
+    server = Server(server_dict, args)
+    server_outputs = server.start()
 
     # ----------------------------------------
     # Run learning loop

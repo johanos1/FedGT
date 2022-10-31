@@ -48,24 +48,67 @@ class Base_Client:
                 self.train_dataloader._iterator = self.train_dataloader._get_iterator()
             self.client_index = client_idx
             num_samples = len(self.train_dataloader) * self.args.batch_size
-            weights = self.train()
-            acc = self.test()
-            client_results.append(
-                {
-                    "weights": weights,
-                    "num_samples": num_samples,
-                    "acc": acc,
-                    "client_index": self.client_index,
-                }
-            )
-            if (
-                self.args.client_sample < 1.0
-                and self.train_dataloader._iterator is not None
-            ):
-                self.train_dataloader._iterator._shutdown_workers()
 
+            if self.args.method == "fedavg":
+                weights = self.train()
+                acc = self.test()
+                client_results.append(
+                    {
+                        "weights": weights,
+                        "num_samples": num_samples,
+                        "acc": acc,
+                        "client_index": self.client_index,
+                    }
+                )
+                if (
+                    self.args.client_sample < 1.0
+                    and self.train_dataloader._iterator is not None
+                ):
+                    self.train_dataloader._iterator._shutdown_workers()
+            elif self.args.method == "fedsgd":
+                gradients = self.get_gradients()
+                client_results.append(
+                    {
+                        "gradients": gradients,
+                        "num_samples": num_samples,
+                        "client_index": self.client_index,
+                    }
+                )
+                if (
+                    self.args.client_sample < 1.0
+                    and self.train_dataloader._iterator is not None
+                ):
+                    self.train_dataloader._iterator._shutdown_workers()
         self.round += 1
         return client_results
+
+    def get_gradients(self):
+        self.model.to(self.device)
+        self.model.train()
+        epoch_loss = []
+        for epoch in range(self.args.epochs):
+            batch_loss = []
+            for batch_idx, (images, labels) in enumerate(self.train_dataloader):
+                images, labels = images.to(self.device), labels.to(self.device)
+                log_probs = self.model(images)
+                loss = self.criterion(log_probs, labels)
+                loss.backward()
+                batch_loss.append(loss.item())
+            if len(batch_loss) > 0:
+                epoch_loss.append(sum(batch_loss) / len(batch_loss))
+            logging.info(
+                "(client {}. Local Training Epoch: {} \tLoss: {:.6f}".format(
+                    self.client_index,
+                    epoch,
+                    sum(epoch_loss) / len(epoch_loss),
+                )
+            )
+
+        grads = {}
+        for name, param in self.model.named_parameters():
+            grads[name] = param.grad / len(self.train_dataloader.dataset)
+
+        return grads
 
     def train(self):
         # train the local model
@@ -103,18 +146,25 @@ class Base_Client:
         weights = self.model.cpu().state_dict()
         return weights
 
-    def test(self):
+    def test(self) -> float:
+        """Evaluate the local model on the test set
+
+        Returns:
+            float: accuracy on test set
+        """
+        # move model to CPU/GPU
         self.model.to(self.device)
+        # switch model to evaluation mode
         self.model.eval()
 
         test_correct = 0.0
         test_loss = 0.0
         test_sample_number = 0.0
+        # No training takes place here
         with torch.no_grad():
             for batch_idx, (x, target) in enumerate(self.train_dataloader):
                 x = x.to(self.device)
                 target = target.to(self.device)
-
                 pred = self.model(x)
                 # loss = self.criterion(pred, target)
                 _, predicted = torch.max(pred, 1)
@@ -133,6 +183,8 @@ class Base_Client:
 
 
 class Base_Server:
+    """Base functionality for server"""
+
     def __init__(self, server_dict, args):
         self.train_data = server_dict["train_data"]
         self.test_data = server_dict["test_data"]
@@ -148,16 +200,35 @@ class Base_Server:
         self.args = args
         self.save_path = server_dict["save_path"]
 
-    def run(self, received_info):
-        server_outputs = self.operations(received_info)
+    def run(self, received_info: List[OrderedDict]) -> List[OrderedDict]:
+        """Aggregater client models and evaluate accuracy
+
+        Args:
+            received_info (List[OrderedDict]): list of local models
+
+        Returns:
+            List[OrderedDict]: copies of global model to each thread
+        """
+        if self.args.method == "fedavg":
+            # aggregate client models
+            server_outputs = self.aggregate_models(received_info)
+
+        elif self.args.method == "fedsgd":
+            # aggregate client gradients
+            server_outputs = self.aggregate_gradients(received_info)
+
+        # check accuracy on test set
         acc = self.test()
         self.log_info(received_info, acc)
         self.round += 1
+        # save the accuracy if it is better
         if acc > self.acc:
             torch.save(
                 self.model.state_dict(), "{}/{}.pt".format(self.save_path, "server")
             )
             self.acc = acc
+
+        # return global model
         return server_outputs
 
     def start(self):
@@ -166,31 +237,84 @@ class Base_Server:
         return [self.model.cpu().state_dict() for x in range(self.args.thread_number)]
 
     def log_info(self, client_info, acc):
-        client_acc = sum([c["acc"] for c in client_info]) / len(client_info)
-        out_str = "Test/AccTop1: {}, Client_Train/AccTop1: {}, round: {}\n".format(
-            acc, client_acc, self.round
-        )
-        with open("{}/out.log".format(self.save_path), "a+") as out_file:
-            out_file.write(out_str)
+        if self.args.method == "fedavg":
+            client_acc = sum([c["acc"] for c in client_info]) / len(client_info)
+            out_str = "Test/AccTop1: {}, Client_Train/AccTop1: {}, round: {}\n".format(
+                acc, client_acc, self.round
+            )
+            with open("{}/out.log".format(self.save_path), "a+") as out_file:
+                out_file.write(out_str)
 
-    def operations(self, client_info):
+    def aggregate_gradients(self, client_info):
+
+        # accumulate all gradients
+        total_grads = {}
+        n_total_samples = 0
+        for info in client_info:
+            # get number of samples at current client
+            n_samples = info["num_samples"]
+            # Loop over the gradients
+            for k, v in info["gradients"].items():
+                # if the layer does not exist, add to dictionary
+                if k not in total_grads:
+                    total_grads[k] = v
+                # update total gradients for layer k
+                total_grads[k] += v * n_samples
+            # get total number of samples
+            n_total_samples += n_samples
+
+        gradients = {}
+        # loop over layers and accumulated gradients and divide by total number of samples
+        for k, v in total_grads.items():
+            gradients[k] = torch.div(v, n_total_samples)
+
+        # Update the global model with aggregate gradients
+        # change to training mode
+        self.model.train()
+        # make gradient zero
+        self.optimizer.zero_grad()
+        # replace all gradients in model with the aggregated gradients
+        for k, v in self.model.named_parameters():
+            v.grad = gradients[k]
+        # perform gradient descent step
+        self.optimizer.step()
+
+        return [self.model.cpu().state_dict() for x in range(self.args.thread_number)]
+
+    def aggregate_models(self, client_info):
+        """Server aggregation of client models
+
+        Args:
+            client_info (_type_): includes the local models, index, accuracy, num samples
+
+        Returns:
+            _type_: list of new global model, one copy for each thread
+        """
+        # sort clients with respect to index
         client_info.sort(key=lambda tup: tup["client_index"])
+        # pick only the weights from the clients
         client_sd = [c["weights"] for c in client_info]
+        # compute fraction of data samples each client has
         cw = [
             c["num_samples"] / sum([x["num_samples"] for x in client_info])
             for c in client_info
         ]
-
+        # load the previous server model
         ssd = self.model.state_dict()
+        # go through each layer in model and replace with weighted average of client models
         for key in ssd:
             ssd[key] = sum([sd[key] * cw[i] for i, sd in enumerate(client_sd)])
+        # update server model with the client average
         self.model.load_state_dict(ssd)
+
         if self.args.save_client:
+            # save the weights from each client
             for client in client_info:
                 torch.save(
                     client["weights"],
                     "{}/client_{}.pt".format(self.save_path, client["client_index"]),
                 )
+        # return a copy of the server model for each thread
         return [self.model.cpu().state_dict() for x in range(self.args.thread_number)]
 
     def test(self):
