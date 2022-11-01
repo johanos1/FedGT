@@ -40,7 +40,7 @@ if __name__ == "__main__":
 
     # Set parameters
     args = DotMap()
-    args.method = "fedavg"  # fedavg, fedsgd
+    args.method = "fedsgd"  # fedavg, fedsgd
     args.data_dir = (
         "data/mnist"  # data/cifar100, data/cifar10, data/mnist, data/fashionmnist
     )
@@ -51,7 +51,7 @@ if __name__ == "__main__":
     args.lr = 0.0001
     args.wd = 0.0001
     args.epochs = 1
-    args.comm_round = 10
+    args.comm_round = 2
     args.pretrained = False
     args.client_sample = 1.0
     args.thread_number = 1

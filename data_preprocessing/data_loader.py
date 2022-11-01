@@ -15,6 +15,7 @@ from data_preprocessing.datasets import (
     FASHION_MNIST_truncated,
     MNIST_truncated,
 )
+from data_preprocessing.data_poisoning import flip_label, random_labels
 
 logging.basicConfig()
 logger = logging.getLogger()
@@ -108,6 +109,7 @@ def load_data(datadir):
 
 def partition_data(datadir, partition, n_nets, alpha):
     logging.info("*********partition data***************")
+    # load the labels from training and test data sets
     y_train, y_test = load_data(datadir)
     n_train = y_train.shape[0]
     n_test = y_test.shape[0]
@@ -158,7 +160,7 @@ def partition_data(datadir, partition, n_nets, alpha):
 
 
 # for centralized training
-def get_dataloader(datadir, train_bs, test_bs, dataidxs=None):
+def get_dataloader(datadir, train_bs, test_bs, dataidxs=None, attacks=None):
     train_transform, test_transform = _data_transforms(datadir)
     if "cifar" in datadir:
         dl_obj = CIFAR_truncated
@@ -177,6 +179,13 @@ def get_dataloader(datadir, train_bs, test_bs, dataidxs=None):
     )
     test_ds = dl_obj(datadir, train=False, transform=test_transform, download=True)
 
+    # PERFORM ATTACKS BEFORE MAKING DATALOADERS
+    if attacks is not None:
+        #train_ds = random_labels(train_ds)
+        label_flips = [(0, 1), (3, 2)]
+        train_ds = flip_label(label_flips, train_ds)
+
+    # Create dataloaders
     train_dl = data.DataLoader(
         dataset=train_ds,
         batch_size=train_bs,
@@ -229,8 +238,9 @@ def load_partition_data(
 
         # training batch size = 64; algorithms batch size = 32
         train_data_local, test_data_local = get_dataloader(
-            data_dir, batch_size, batch_size, dataidxs
+            data_dir, batch_size, batch_size, dataidxs, attacks=True
         )
+
         logging.info(
             "client_idx = %d, batch_num_train_local = %d, batch_num_test_local = %d"
             % (client_idx, len(train_data_local), len(test_data_local))

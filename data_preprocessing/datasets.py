@@ -191,12 +191,12 @@ class FASHION_MNIST_truncated(data.Dataset):
 
     def __build_truncated_dataset__(self):
 
-        mnist_dataobj = FashionMNIST(
+        fmnist_dataobj = FashionMNIST(
             self.root, self.train, self.transform, self.target_transform, self.download
         )
 
-        data = mnist_dataobj.data
-        target = mnist_dataobj.targets
+        data = fmnist_dataobj.data
+        target = fmnist_dataobj.targets
 
         if self.dataidxs is not None:
             data = data[self.dataidxs]
