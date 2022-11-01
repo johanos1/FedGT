@@ -44,7 +44,7 @@ if __name__ == "__main__":
     args.data_dir = (
         "data/mnist"  # data/cifar100, data/cifar10, data/mnist, data/fashionmnist
     )
-    args.partition_method = "homo"  # homo, hetero
+    args.partition_method = "hetero"  # homo, hetero
     args.partition_alpha = 0.1  # in (0,1]
     args.client_number = 2
     args.batch_size = 64
@@ -137,10 +137,17 @@ if __name__ == "__main__":
     # Run learning loop
     for r in range(args.comm_round):
         round_start = time.time()
+
+        # train locally
         client_outputs = []
         for i, c in enumerate(clients):
             client_outputs.append(c.run(server_outputs[0]))
+
         client_outputs = [c for sublist in client_outputs for c in sublist]
+
+        # This is where the identification of malicious nodes should go
+
+        # aggregate
         server_outputs = server.run(client_outputs)
         round_end = time.time()
         logging.info("Round {} Time: {}s".format(r, round_end - round_start))

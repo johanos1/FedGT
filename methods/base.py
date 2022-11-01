@@ -7,6 +7,8 @@ import torch
 import logging
 import json
 from torch.multiprocessing import current_process
+from sklearn.metrics import confusion_matrix, classification_report
+import numpy as np
 
 
 class Base_Client:
@@ -45,12 +47,16 @@ class Base_Client:
 
             if self.args.method == "fedavg":
                 weights = self.train_model()
-                acc = self.test()
+                # acc = self.test()
+                acc, class_prec, class_recall, class_f1 = self.test_classlevel()
                 client_results.append(
                     {
                         "weights": weights,
                         "num_samples": num_samples,
                         "acc": acc,
+                        "class_prec": class_prec,
+                        "class_recall": class_recall,
+                        "class_f1": class_f1,
                         "client_index": self.client_index,
                     }
                 )
@@ -58,12 +64,15 @@ class Base_Client:
             elif self.args.method == "fedsgd":
                 gradients = self.train_gradient()
                 # acc = self.test()
-                acc = 0
+                acc, class_prec, class_recall, class_f1 = self.test_classlevel()
                 client_results.append(
                     {
                         "gradients": gradients,
                         "num_samples": num_samples,
                         "acc": acc,
+                        "class_prec": class_prec,
+                        "class_recall": class_recall,
+                        "class_f1": class_f1,
                         "client_index": self.client_index,
                     }
                 )
@@ -172,6 +181,71 @@ class Base_Client:
                 )
             )
         return acc
+
+    def test_classlevel(self):
+        # move model to CPU/GPU
+        self.model.to(self.device)
+        # switch model to evaluation mode
+        self.model.eval()
+
+        y_pred = []
+        y_true = []
+        with torch.no_grad():
+            for batch_idx, (x, target) in enumerate(self.train_dataloader):
+                x = x.to(self.device)
+                target = target.to(self.device)
+                pred = self.model(x)
+
+                _, predicted = torch.max(pred, 1)
+                y_pred.extend(predicted.numpy())
+
+                labels = target.numpy()
+                y_true.extend(labels)  # Save Truth
+
+        cf_matrix = confusion_matrix(y_true, y_pred)
+
+        # Compute TP, FP, NP, TN
+        true_pos = np.zeros(10)
+        true_neg = np.zeros(10)
+        false_pos = np.zeros(10)
+        false_neg = np.zeros(10)
+        # in the heterogeneous setting, there may be labels missing in the dataset
+        # so find the number of labels in the local dataset
+        num_classes = np.maximum(len(np.unique(y_pred)), len(np.unique(y_true)))
+        for i in range(num_classes):
+            true_pos[i] = cf_matrix[i, i].astype(np.float64)
+            false_pos[i] = (cf_matrix[:, i].sum() - true_pos[i]).astype(np.float64)
+            false_neg[i] = (cf_matrix[i, :].sum() - true_pos[i]).astype(np.float64)
+            true_neg[i] = (
+                cf_matrix.sum().sum() - true_pos[i] - false_pos[i] - false_neg[i]
+            ).astype(np.float64)
+
+        tot = len(self.train_dataloader.dataset)
+        # what fraction of positive predictions were indeed positive labels
+        class_prec = np.divide(
+            true_pos,
+            (true_pos + false_pos),
+            out=np.zeros_like(true_pos),
+            where=(true_pos + false_pos) != 0,
+        )
+        # what fraction of positive labels were predicted as positive
+        class_recall = np.divide(
+            true_pos,
+            (true_pos + false_neg),
+            out=np.zeros_like(true_pos),
+            where=(true_pos + false_neg) != 0,
+        )
+        # harmonic mean of precision and recall
+        class_f1 = 2 * np.divide(
+            (class_prec * class_recall),
+            (class_prec + class_recall),
+            out=np.zeros_like((class_prec * class_recall)),
+            where=(class_prec + class_recall) != 0,
+        )
+        # number of correct predictions from total samples
+        acc = (true_pos.sum()) / len(self.train_dataloader.dataset)
+
+        return acc, class_prec, class_recall, class_f1
 
 
 class Base_Server:
