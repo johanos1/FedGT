@@ -160,7 +160,7 @@ def partition_data(datadir, partition, n_nets, alpha):
 
 
 # for centralized training
-def get_dataloader(datadir, train_bs, test_bs, dataidxs=None, attacks=None):
+def get_dataloader(datadir, train_bs, test_bs, dataidxs=None, attacks=[]):
     train_transform, test_transform = _data_transforms(datadir)
     if "cifar" in datadir:
         dl_obj = CIFAR_truncated
@@ -179,11 +179,15 @@ def get_dataloader(datadir, train_bs, test_bs, dataidxs=None, attacks=None):
     )
     test_ds = dl_obj(datadir, train=False, transform=test_transform, download=True)
 
-    # PERFORM ATTACKS BEFORE MAKING DATALOADERS
-    if attacks is not None:
-        #train_ds = random_labels(train_ds)
-        label_flips = [(0, 1), (3, 2)]
-        train_ds = flip_label(label_flips, train_ds)
+    # Perform attacks before making dataloaders. Data cannot be altered afterwards
+    if len(attacks) > 0:
+        for attack in attacks:
+            f_attack = attack[0]  # first element is the callable
+            if len(attack) > 1:  # second element is the optional arguments
+                args = attack[1]
+                train_ds = f_attack(args, train_ds)
+            else:
+                train_ds = f_attack(train_ds)
 
     # Create dataloaders
     train_dl = data.DataLoader(
@@ -207,7 +211,7 @@ def get_dataloader(datadir, train_bs, test_bs, dataidxs=None, attacks=None):
 
 
 def load_partition_data(
-    data_dir, partition_method, partition_alpha, client_number, batch_size
+    data_dir, partition_method, partition_alpha, client_number, batch_size, attacks
 ):
     class_num, net_dataidx_map, traindata_cls_counts = partition_data(
         data_dir, partition_method, client_number, partition_alpha
@@ -238,7 +242,7 @@ def load_partition_data(
 
         # training batch size = 64; algorithms batch size = 32
         train_data_local, test_data_local = get_dataloader(
-            data_dir, batch_size, batch_size, dataidxs, attacks=True
+            data_dir, batch_size, batch_size, dataidxs, attacks[client_idx]
         )
 
         logging.info(

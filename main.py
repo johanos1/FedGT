@@ -11,6 +11,7 @@ import os
 from collections import defaultdict
 import time
 from ctypes import *
+from data_preprocessing.data_poisoning import flip_label, random_labels
 
 # methods
 import methods.fedavg as fedavg
@@ -40,13 +41,13 @@ if __name__ == "__main__":
 
     # Set parameters
     args = DotMap()
-    args.method = "fedsgd"  # fedavg, fedsgd
+    args.method = "fedavg"  # fedavg, fedsgd
     args.data_dir = (
         "data/mnist"  # data/cifar100, data/cifar10, data/mnist, data/fashionmnist
     )
     args.partition_method = "hetero"  # homo, hetero
     args.partition_alpha = 0.1  # in (0,1]
-    args.client_number = 2
+    args.client_number = 4
     args.batch_size = 64
     args.lr = 0.0001
     args.wd = 0.0001
@@ -55,6 +56,16 @@ if __name__ == "__main__":
     args.pretrained = False
     args.client_sample = 1.0
     args.thread_number = 1
+
+    # define attacks
+    malicious_clients = [3]
+
+    attacks = list_of_lists = [[] for i in range(args.client_number)]
+    for client in range(args.client_number):
+        if client in malicious_clients:
+            # label_flips = [(0, 1), (3, 2)]
+            # attacks[client].append((flip_label, label_flips))
+            attacks[client].append((random_labels,))
 
     # get data
     (
@@ -72,6 +83,7 @@ if __name__ == "__main__":
         args.partition_alpha,
         args.client_number,
         args.batch_size,
+        attacks,
     )
     # Model = resnet56 if 'cifar' in args.data_dir else resnet18
     if "cifar" in args.data_dir:
@@ -146,6 +158,7 @@ if __name__ == "__main__":
         client_outputs = [c for sublist in client_outputs for c in sublist]
 
         # This is where the identification of malicious nodes should go
+        # TODO: write testing
 
         # aggregate
         server_outputs = server.run(client_outputs)
