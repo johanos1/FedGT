@@ -9,226 +9,235 @@ import numpy as np
 import torch.utils.data as data
 from PIL import Image
 from torchvision.datasets import CIFAR10, CIFAR100, MNIST, FashionMNIST
+from torch.utils.data import random_split, DataLoader, Dataset
+
+from data_preprocessing.data_poisoning import flip_label, random_labels
 
 logging.basicConfig()
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-IMG_EXTENSIONS = (
-    ".jpg",
-    ".jpeg",
-    ".png",
-    ".ppm",
-    ".bmp",
-    ".pgm",
-    ".tif",
-    ".tiff",
-    ".webp",
-)
 
-
-class CIFAR_truncated(data.Dataset):
+class CIFAR_Manager:
     def __init__(
         self,
         root,
         dataidxs=None,
-        train=True,
         transform=None,
         target_transform=None,
-        download=False,
-    ):
-
-        self.root = root
-        self.dataidxs = dataidxs
-        self.train = train
-        self.transform = transform
-        self.target_transform = target_transform
-        self.download = download
-
-        self.data, self.target = self.__build_truncated_dataset__()
-
-    def __build_truncated_dataset__(self):
-        print("download = " + str(self.download))
-        if "cifar100" in self.root:
-            cifar_dataobj = CIFAR100(
-                self.root,
-                self.train,
-                self.transform,
-                self.target_transform,
-                self.download,
-            )
-        else:
-            cifar_dataobj = CIFAR10(  # Maybe this can offer a validation set
-                self.root,
-                self.train,
-                self.transform,
-                self.target_transform,
-                self.download,
-            )
-
-        if self.train:
-            # print("train member of the class: {}".format(self.train))
-            # data = cifar_dataobj.train_data
-            data = cifar_dataobj.data
-            target = np.array(cifar_dataobj.targets)
-        else:
-            data = cifar_dataobj.data
-            target = np.array(cifar_dataobj.targets)
-
-        if self.dataidxs is not None:
-            data = data[self.dataidxs]
-            target = target[self.dataidxs]
-
-        return data, target
-
-    def truncate_channel(self, index):
-        for i in range(index.shape[0]):
-            gs_index = index[i]
-            self.data[gs_index, :, :, 1] = 0.0
-            self.data[gs_index, :, :, 2] = 0.0
-
-    def __getitem__(self, index):
-        """
-        Args:
-            index (int): Index
-        Returns:
-            tuple: (image, target) where target is index of the target class.
-        """
-        img, target = self.data[index], self.target[index]
-
-        if self.transform is not None:
-            img = self.transform(img)
-
-        if self.target_transform is not None:
-            target = self.target_transform(target)
-
-        return img, target
-
-    def __len__(self):
-        return len(self.data)
-
-
-class MNIST_truncated(data.Dataset):
-    def __init__(
-        self,
-        root,
-        dataidxs=None,
-        train=True,
-        transform=None,
-        target_transform=None,
-        download=False,
         val_size=None,
-        # validxs = None,
+        train_bs=None,
+        test_bs=None,
     ):
-
         self.root = root
         self.dataidxs = dataidxs
-        self.train = train
         self.transform = transform
         self.target_transform = target_transform
-        self.download = download
         self.val_size = val_size
-        self.validxs = None  # ask about this...
-
-        # only one 'val_size or validxs' should not be None!
-        if val_size is None:
-            self.data, self.target = self.__build_truncated_dataset__()
+        self.train_bs = train_bs
+        self.test_bs = test_bs
+        train = True
+        if "cifar100" in self.root:
+            cifar_train = CIFAR100(
+                self.root,
+                train,
+                self.transform,
+                self.target_transform,
+                download=True,
+            )
         else:
-            self.data, self.target, self.validxs = self.__build_truncated_dataset__()
-
-    def __build_truncated_dataset__(self):
-        """
-        Whenever val_size is not None we ask for the validation dataset and indexes (should be the first thing done!)
-        Then we output validxs and save it for later in the other function
-        we will use the validxs to initialize MNIST without the validation dataset!
-        """
-
-        mnist_dataobj = MNIST(
-            self.root, self.train, self.transform, self.target_transform, self.download
+            cifar_train = CIFAR10(  # Maybe this can offer a validation set
+                self.root,
+                train,
+                self.transform,
+                self.target_transform,
+                download=True,
+            )
+        num_data = len(cifar_train)
+        self.train_ds, self.valid_ds = random_split(
+            cifar_train, [num_data - self.val_size, self.val_size]
         )
+        # for some reason, targets for CIFAR is not an array but a list...
+        self.train_ds.dataset.targets = np.asarray(self.train_ds.dataset.targets)
 
-        if self.val_size is not None:
-            num_data_points = len(mnist_dataobj)
-            validxs = np.random.permutation(num_data_points)
-            validxs = validxs[0 : self.val_size]
-            data = mnist_dataobj.data
-            target = mnist_dataobj.targets
-            data = data[validxs]
-            target = target[validxs]
-            return data, target, validxs
+    def get_client_dl(self, dataidxs, attacks=None):
+        client_ds = Client_Dataset(self.train_ds, dataidxs)
 
-        data = mnist_dataobj.data
-        target = mnist_dataobj.targets
+        # Perform attacks before making dataloaders. Data cannot be altered afterwards
+        if len(attacks) > 0:
+            for attack in attacks:
+                f_attack = attack[0]  # first element is the callable
+                if len(attack) > 1:  # second element is the optional arguments
+                    args = attack[1]
+                    client_ds = f_attack(args, client_ds)
+                else:
+                    client_ds = f_attack(client_ds)
 
-        # if self.validxs is not None:
-        #    extra_points = np.setdiff1d(np.arange(num_data_points), np.array(self.validxs))
-        #    data = data[extra_points]
-        #    target = target[extra_points]
+        client_dl = DataLoader(client_ds, batch_size=self.train_bs)
+        return client_dl
 
-        if self.dataidxs is not None:
-            data = data[self.dataidxs]
-            target = target[self.dataidxs]
+    def get_training_labels(self):
+        return self.train_ds.dataset.targets[self.train_ds.indices]
 
-        return data, target
+    def get_validation_dl(self):
+        val_dl = DataLoader(self.valid_ds, batch_size=self.train_bs)
+        return val_dl
 
-    def __getitem__(self, index):
-        """
-        Args:
-            index (int): Index
-        Returns:
-            tuple: (image, target) where target is index of the target class.
-        """
-        img, target = self.data[index], self.target[index]
+    def get_test_dl(self):
+        train = False
+        if "cifar100" in self.root:
+            cifar_test = CIFAR100(
+                self.root,
+                train,
+                self.transform,
+                self.target_transform,
+                download=True,
+            )
+        else:
+            cifar_test = CIFAR10(  # Maybe this can offer a validation set
+                self.root,
+                train,
+                self.transform,
+                self.target_transform,
+                download=True,
+            )
 
-        # doing this so that it is consistent with all other datasets to return a PIL Image
-        img = Image.fromarray(img.numpy(), mode="L")
+        test_dl = DataLoader(cifar_test, batch_size=self.test_bs)
 
-        if self.transform is not None:
-            img = self.transform(img)
-
-        if self.target_transform is not None:
-            target = self.target_transform(target)
-
-        return img, target
-
-    def __len__(self):
-        return len(self.data)
+        return test_dl
 
 
-class FASHION_MNIST_truncated(data.Dataset):
+class MNIST_Manager:
     def __init__(
         self,
         root,
         dataidxs=None,
-        train=True,
         transform=None,
         target_transform=None,
+        val_size=None,
+        train_bs=None,
+        test_bs=None,
+    ):
+        self.root = root
+        self.dataidxs = dataidxs
+        self.transform = transform
+        self.target_transform = target_transform
+        self.val_size = val_size
+        self.train_bs = train_bs
+        self.test_bs = test_bs
+
+        train = True
+        mnist_train = MNIST(
+            self.root, train, self.transform, self.target_transform, download=True
+        )
+        num_data = len(mnist_train)
+        self.train_ds, self.valid_ds = random_split(
+            mnist_train, [num_data - self.val_size, self.val_size]
+        )
+
+    def get_client_dl(self, dataidxs, attacks=None):
+        client_ds = Client_Dataset(self.train_ds, dataidxs)
+
+        # Perform attacks before making dataloaders. Data cannot be altered afterwards
+        if len(attacks) > 0:
+            for attack in attacks:
+                f_attack = attack[0]  # first element is the callable
+                if len(attack) > 1:  # second element is the optional arguments
+                    args = attack[1]
+                    client_ds = f_attack(args, client_ds)
+                else:
+                    client_ds = f_attack(client_ds)
+
+        client_dl = DataLoader(client_ds, batch_size=self.train_bs)
+        return client_dl
+
+    def get_training_labels(self):
+        return self.train_ds.dataset.targets[self.train_ds.indices]
+
+    def get_validation_dl(self):
+        val_dl = DataLoader(self.valid_ds, batch_size=self.train_bs)
+        return val_dl
+
+    def get_test_dl(self):
+        train = False
+        fmnist_test = MNIST(
+            self.root, train, self.transform, self.target_transform, download=True
+        )
+        test_dl = DataLoader(fmnist_test, batch_size=self.test_bs)
+
+        return test_dl
+
+
+class FMNIST_Manager:
+    def __init__(
+        self,
+        root,
+        dataidxs=None,
+        transform=None,
+        target_transform=None,
+        val_size=None,
+        train_bs=None,
+        test_bs=None,
         download=False,
     ):
 
         self.root = root
         self.dataidxs = dataidxs
-        self.train = train
         self.transform = transform
         self.target_transform = target_transform
+        self.val_size = val_size
+        self.train_bs = train_bs
+        self.test_bs = test_bs
         self.download = download
 
-        self.data, self.target = self.__build_truncated_dataset__()
-
-    def __build_truncated_dataset__(self):
-
-        fmnist_dataobj = FashionMNIST(
-            self.root, self.train, self.transform, self.target_transform, self.download
+        train = True
+        fmnist_train = FashionMNIST(
+            self.root, train, self.transform, self.target_transform, self.download
+        )
+        num_data = len(fmnist_train)
+        self.train_ds, self.valid_ds = random_split(
+            fmnist_train, [num_data - self.val_size, self.val_size]
         )
 
-        data = fmnist_dataobj.data
-        target = fmnist_dataobj.targets
+    def get_client_dl(self, dataidxs, attacks=None):
+        client_ds = Client_Dataset(self.train_ds, dataidxs)
 
-        if self.dataidxs is not None:
-            data = data[self.dataidxs]
-            target = target[self.dataidxs]
+        # Perform attacks before making dataloaders. Data cannot be altered afterwards
+        if len(attacks) > 0:
+            for attack in attacks:
+                f_attack = attack[0]  # first element is the callable
+                if len(attack) > 1:  # second element is the optional arguments
+                    args = attack[1]
+                    client_ds = f_attack(args, client_ds)
+                else:
+                    client_ds = f_attack(client_ds)
 
-        return data, target
+        client_dl = DataLoader(client_ds, batch_size=self.train_bs)
+        return client_dl
+
+    def get_training_labels(self):
+        return self.train_ds.dataset.targets[self.train_ds.indices]
+
+    def get_validation_dl(self):
+        val_dl = DataLoader(self.valid_ds, batch_size=self.train_bs)
+        return val_dl
+
+    def get_test_dl(self):
+        train = False
+        fmnist_test = FashionMNIST(
+            self.root, train, self.transform, self.target_transform, self.download
+        )
+        test_dl = DataLoader(fmnist_test, batch_size=self.test_bs)
+
+        return test_dl
+
+
+# This is needed to be
+class Client_Dataset(Dataset):
+    def __init__(self, ds, dataidxs, is_cifar=False):
+        self.data = ds.dataset.data[dataidxs]
+        self.target = ds.dataset.targets[dataidxs]
+        self.is_cifar = is_cifar
 
     def __getitem__(self, index):
         """
@@ -241,13 +250,6 @@ class FASHION_MNIST_truncated(data.Dataset):
 
         # doing this so that it is consistent with all other datasets to return a PIL Image
         img = Image.fromarray(img.numpy(), mode="L")
-
-        if self.transform is not None:
-            img = self.transform(img)
-
-        if self.target_transform is not None:
-            target = self.target_transform(target)
-
         return img, target
 
     def __len__(self):

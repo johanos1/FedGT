@@ -6,16 +6,14 @@ Code based on https://github.com/FedML-AI/FedML
 import logging
 
 import numpy as np
-from numpy.core.fromnumeric import mean
-import torch.utils.data as data
 import torchvision.transforms as transforms
 
 from data_preprocessing.datasets import (
-    CIFAR_truncated,
-    FASHION_MNIST_truncated,
-    MNIST_truncated,
+    CIFAR_Manager,
+    FMNIST_Manager,
+    MNIST_Manager,
 )
-from data_preprocessing.data_poisoning import flip_label, random_labels
+
 
 logging.basicConfig()
 logger = logging.getLogger()
@@ -87,61 +85,34 @@ def _data_transforms(datadir):
     return train_transform, valid_transform
 
 
-def load_data(datadir):
-    train_transform, test_transform = _data_transforms(datadir)
-    if "cifar" in datadir:
-        dl_obj = CIFAR_truncated
-    elif "fashion" in datadir:
-        dl_obj = FASHION_MNIST_truncated
-    elif "mnist" in datadir:
-        dl_obj = MNIST_truncated
-
-    elif "fashionmnist" in datadir:
-        pass
-
-    train_ds = dl_obj(datadir, train=True, download=True, transform=train_transform)
-    # split the train_ds into train_ds and val_ds
-    # after DataLoader is called
-    test_ds = dl_obj(datadir, train=False, download=True, transform=test_transform)
-
-    y_train, y_test = train_ds.target, test_ds.target  # Labels
-
-    return (y_train, y_test)
-
-
-def partition_data(datadir, partition, n_nets, alpha, validxs):
+def partition_data(data_obj, partition, n_nets, alpha):
     """
     Inputs:
         datadir -> mnist, fashion, cifar
         partition -> homo or hetero
         n_nets -> number of devices
         alpha -> hetero parameter
-        validxs -> idxs of the validation dataset
     Outputs:
 
     """
     logging.info("*********partition data***************")
     # load the labels from training and test data sets
-    y_train, y_test = load_data(datadir)
-    n_train = y_train.shape[0]
-    n_test = y_test.shape[0]
-    val_size = validxs.shape[0]
+    y_train = data_obj.get_training_labels()
+    n_train = len(y_train)
     class_num = len(np.unique(y_train))
 
     if partition == "homo":
         total_num = n_train
         idxs = np.random.permutation(total_num)
-        idxs = np.setdiff1d(idxs, validxs)
         batch_idxs = np.array_split(idxs, n_nets)
         net_dataidx_map = {i: batch_idxs[i] for i in range(n_nets)}
 
     elif partition == "hetero":
         min_size = 0
         K = class_num
-        N = n_train - val_size
+        N = n_train
         logging.info("N = " + str(N))
         net_dataidx_map = {}
-        y_train[validxs] = -1  # negative labelling
 
         while min_size < 10:
             idx_batch = [[] for _ in range(n_nets)]
@@ -174,63 +145,42 @@ def partition_data(datadir, partition, n_nets, alpha, validxs):
     return class_num, net_dataidx_map, traindata_cls_counts
 
 
-# for centralized training
-def get_dataloader(
-    datadir, train_bs, test_bs, dataidxs=None, attacks=[], val_size=None
-):
+def get_data_object(datadir, val_size, batch_size):
     train_transform, test_transform = _data_transforms(datadir)
     if "cifar" in datadir:
-        dl_obj = CIFAR_truncated
-
-    elif "mnist" in datadir:
-        dl_obj = MNIST_truncated
+        dl_obj = CIFAR_Manager(
+            datadir,
+            None,
+            train_transform,
+            test_transform,
+            val_size,
+            batch_size,
+            batch_size,
+        )
 
     elif "fashionmnist" in datadir:
-        dl_obj = FASHION_MNIST_truncated
+        dl_obj = FMNIST_Manager(
+            datadir,
+            None,
+            train_transform,
+            test_transform,
+            val_size,
+            batch_size,
+            batch_size,
+        )
 
-    workers = 0
-    persist = False
+    elif "mnist" in datadir:
+        dl_obj = MNIST_Manager(
+            datadir,
+            None,
+            train_transform,
+            test_transform,
+            val_size,
+            batch_size,
+            batch_size,
+        )
 
-    train_ds = dl_obj(
-        datadir,
-        dataidxs=dataidxs,
-        train=True,
-        transform=train_transform,
-        download=True,
-        val_size=val_size,
-    )
-    test_ds = dl_obj(datadir, train=False, transform=test_transform, download=True)
-
-    # Perform attacks before making dataloaders. Data cannot be altered afterwards
-    if len(attacks) > 0:
-        for attack in attacks:
-            f_attack = attack[0]  # first element is the callable
-            if len(attack) > 1:  # second element is the optional arguments
-                args = attack[1]
-                train_ds = f_attack(args, train_ds)
-            else:
-                train_ds = f_attack(train_ds)
-
-    # Create dataloaders
-    train_dl = data.DataLoader(
-        dataset=train_ds,
-        batch_size=train_bs,
-        shuffle=True,
-        drop_last=True,
-        num_workers=workers,
-        persistent_workers=persist,
-    )
-    # We should create a val_dl -> No, this is called many times... we should not even have a test_dl!!!!
-    test_dl = data.DataLoader(
-        dataset=test_ds,
-        batch_size=test_bs,
-        shuffle=False,
-        drop_last=True,
-        num_workers=workers,
-        persistent_workers=persist,
-    )
-
-    return train_dl, test_dl
+    return dl_obj
 
 
 def load_partition_data(
@@ -242,80 +192,47 @@ def load_partition_data(
     attacks,
     val_size,
 ):
-    # I changed
-    val_data_server = get_dataloader(
-        data_dir, batch_size, batch_size, dataidxs=None, attacks=[], val_size=val_size
-    )
 
+    data_obj = get_data_object(data_dir, val_size, batch_size)
+
+    # create data for server
+    server_val_dl = data_obj.get_validation_dl()
+    val_data_num = len(server_val_dl.dataset)
+
+    server_test_dl = data_obj.get_test_dl()
+    test_data_num = len(server_test_dl.dataset)
+
+    # Start looking at data for clients
     class_num, net_dataidx_map, traindata_cls_counts = partition_data(
-        data_dir,
-        partition_method,
-        client_number,
-        partition_alpha,
-        validxs=val_data_server[0].dataset.validxs,
+        data_obj, partition_method, client_number, partition_alpha
     )
 
     logging.info("traindata_cls_counts = " + str(traindata_cls_counts))
     train_data_num = sum([len(net_dataidx_map[r]) for r in range(client_number)])
 
-    # this check only works for homo
-    if partition_method == "homo":
-        check_indexes = np.empty(
-            (client_number, net_dataidx_map[0].shape[0]), dtype="int64"
-        )
-        for kkk in range(client_number):
-            check_indexes[kkk] = net_dataidx_map[kkk]
-        check_indexes = check_indexes.flatten()
-        assert (
-            np.unique(check_indexes).shape[0] == check_indexes.shape[0]
-        ), "check_indexes should be an unique vector"
-        assert (
-            np.intersect1d(check_indexes, val_data_server[0].dataset.validxs).shape[0]
-            == 0
-        ), "there is an intersection with validxs"
-
-    # Marvin: I commented the following lines
-    # train_data_global, test_data_global = get_dataloader(
-    #    data_dir, batch_size, batch_size
-    # )
-
-    logging.info("train_dl_global number = " + str(len(train_data_global)))
-    logging.info("test_dl_global number = " + str(len(test_data_global)))
-    test_data_num = len(test_data_global)
-
     # get local dataset
-    data_local_num_dict = dict()
-    train_data_local_dict = dict()
-    test_data_local_dict = dict()
+    client_data_num = dict()
+    client_dl_dict = dict()
 
     for client_idx in range(client_number):
         dataidxs = net_dataidx_map[client_idx]
         local_data_num = len(dataidxs)
-        data_local_num_dict[client_idx] = local_data_num
-        logging.info(
-            "client_idx = %d, local_sample_number = %d" % (client_idx, local_data_num)
-        )
+        client_data_num[client_idx] = local_data_num
 
-        # training batch size = 64; algorithms batch size = 32
-        # Marvin: Test data is available in every node??
-        train_data_local, test_data_local = get_dataloader(
-            data_dir, batch_size, batch_size, dataidxs, attacks[client_idx]
-        )
+        client_dl = data_obj.get_client_dl(dataidxs, attacks[client_idx])
+        client_dl_dict[client_idx] = client_dl
 
         logging.info(
-            "client_idx = %d, batch_num_train_local = %d, batch_num_test_local = %d"
-            % (client_idx, len(train_data_local), len(test_data_local))
+            "client_idx = %d, local_sample_number = %d, batch_num = %d"
+            % (client_idx, local_data_num, len(client_dl))
         )
-        train_data_local_dict[client_idx] = train_data_local
-        test_data_local_dict[client_idx] = test_data_local
+
     return (
-        train_data_num,
+        val_data_num,
         test_data_num,
-        # train_data_global,
-        # test_data_global,
-        data_local_num_dict,
-        train_data_local_dict,
-        test_data_local_dict,
+        server_val_dl,
+        server_test_dl,
+        client_data_num,
+        client_dl_dict,
         class_num,
     )
-    # train_data_global change to validation set!

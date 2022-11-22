@@ -44,23 +44,23 @@ if __name__ == "__main__":
 
     set_random_seed()
 
-    # Parameters for calling BCJR C code
-    lib = ctypes.cdll.LoadLibrary("./src/C_code/BCJR_4_python.so")
-    fun = lib.BCJR
-    fun.restype = None
-    p_ui8_c = ndpointer(ctypes.c_uint8, flags="C_CONTIGUOUS")
-    p_d_c = ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")
-    fun.argtypes = [
-        p_ui8_c,
-        p_d_c,
-        p_ui8_c,
-        p_d_c,
-        ctypes.c_double,
-        ctypes.c_int,
-        ctypes.c_int,
-        p_d_c,
-        p_ui8_c,
-    ]
+    # # Parameters for calling BCJR C code
+    # lib = ctypes.cdll.LoadLibrary("./src/C_code/BCJR_4_python.so")
+    # fun = lib.BCJR
+    # fun.restype = None
+    # p_ui8_c = ndpointer(ctypes.c_uint8, flags="C_CONTIGUOUS")
+    # p_d_c = ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")
+    # fun.argtypes = [
+    #     p_ui8_c,
+    #     p_d_c,
+    #     p_ui8_c,
+    #     p_d_c,
+    #     ctypes.c_double,
+    #     ctypes.c_int,
+    #     ctypes.c_int,
+    #     p_d_c,
+    #     p_ui8_c,
+    # ]
 
     # Set parameters
     args = DotMap()
@@ -81,9 +81,8 @@ if __name__ == "__main__":
     args.thread_number = 1
     args.val_size = 3000
 
-    # define attacks
+    # Create attacks
     malicious_clients = [0, 1, 2]
-
     attacks = list_of_lists = [[] for i in range(args.client_number)]
     for client in range(args.client_number):
         if client in malicious_clients:
@@ -91,15 +90,14 @@ if __name__ == "__main__":
             # attacks[client].append((flip_label, label_flips))
             attacks[client].append((random_labels,))
 
-    # get data
+    # Obtain dataset for server and the clients
     (
-        train_data_num,
+        val_data_num,
         test_data_num,
-        train_data_global,
-        test_data_global,
+        server_val_dl,
+        server_test_dl,
         data_local_num_dict,
         train_data_local_dict,
-        test_data_local_dict,
         class_num,
     ) = dl.load_partition_data(
         args.data_dir,
