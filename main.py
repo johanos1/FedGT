@@ -68,7 +68,7 @@ if __name__ == "__main__":
     args.data_dir = (
         "data/mnist"  # data/cifar100, data/cifar10, data/mnist, data/fashionmnist
     )
-    args.partition_method = "homo"  # homo, hetero
+    args.partition_method = "hetero"  # homo, hetero
     args.partition_alpha = 0.1  # in (0,1]
     args.client_number = 15
     args.batch_size = 100
@@ -95,7 +95,7 @@ if __name__ == "__main__":
     (
         train_data_num,
         test_data_num,
-        train_data_global,
+        validation_data_server,
         test_data_global,
         data_local_num_dict,
         train_data_local_dict,
@@ -169,7 +169,7 @@ if __name__ == "__main__":
     # ----------------------------------------
     # Prepare Server info
     server_dict = {
-        "train_data": train_data_global,
+        "train_data": validation_data_server,
         "test_data": test_data_global,
         "model_type": Model,
         "num_classes": class_num,

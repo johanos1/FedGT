@@ -243,43 +243,46 @@ def load_partition_data(
     val_size,
 ):
     # I changed
-    val_data_server = get_dataloader(
+    val_data_server, test_data_global = get_dataloader(
         data_dir, batch_size, batch_size, dataidxs=None, attacks=[], val_size=val_size
     )
+
+    # test_data_global = get_dataloader(data_dir, batch_size, batch_size)
 
     class_num, net_dataidx_map, traindata_cls_counts = partition_data(
         data_dir,
         partition_method,
         client_number,
         partition_alpha,
-        validxs=val_data_server[0].dataset.validxs,
+        validxs=val_data_server.dataset.validxs,
     )
 
     logging.info("traindata_cls_counts = " + str(traindata_cls_counts))
     train_data_num = sum([len(net_dataidx_map[r]) for r in range(client_number)])
 
-    # this check only works for homo
-    if partition_method == "homo":
-        check_indexes = np.empty(
-            (client_number, net_dataidx_map[0].shape[0]), dtype="int64"
-        )
-        for kkk in range(client_number):
-            check_indexes[kkk] = net_dataidx_map[kkk]
-        check_indexes = check_indexes.flatten()
-        assert (
-            np.unique(check_indexes).shape[0] == check_indexes.shape[0]
-        ), "check_indexes should be an unique vector"
-        assert (
-            np.intersect1d(check_indexes, val_data_server[0].dataset.validxs).shape[0]
-            == 0
-        ), "there is an intersection with validxs"
+    check_indexes = -1 * np.ones(train_data_num, dtype="int64")
+    current = 0
+    for kkk in range(client_number):
+        moremore = len(net_dataidx_map[kkk])
+        check_indexes[current : current + moremore] = np.array(net_dataidx_map[kkk])
+        current = current + moremore
+    assert (np.sum(check_indexes < 0) == 0, "All indexes should be loaded!!")
+    assert (
+        np.unique(check_indexes).shape[0] == check_indexes.shape[0]
+    ), "check_indexes should be an unique vector"
+    assert (
+        np.intersect1d(check_indexes, val_data_server.dataset.validxs).shape[0] == 0
+    ), "there is an intersection with validxs"
 
     # Marvin: I commented the following lines
     # train_data_global, test_data_global = get_dataloader(
     #    data_dir, batch_size, batch_size
     # )
+    #
+    # logging.info(
+    #    "train_dl_global number = " + str(len(val_data_server) + train_data_num)
+    # )
 
-    logging.info("train_dl_global number = " + str(len(train_data_global)))
     logging.info("test_dl_global number = " + str(len(test_data_global)))
     test_data_num = len(test_data_global)
 
@@ -311,8 +314,8 @@ def load_partition_data(
     return (
         train_data_num,
         test_data_num,
-        # train_data_global,
-        # test_data_global,
+        val_data_server,
+        test_data_global,
         data_local_num_dict,
         train_data_local_dict,
         test_data_local_dict,
