@@ -100,33 +100,48 @@ def load_data(datadir):
         pass
 
     train_ds = dl_obj(datadir, train=True, download=True, transform=train_transform)
+    # split the train_ds into train_ds and val_ds
+    # after DataLoader is called
     test_ds = dl_obj(datadir, train=False, download=True, transform=test_transform)
 
-    y_train, y_test = train_ds.target, test_ds.target
+    y_train, y_test = train_ds.target, test_ds.target  # Labels
 
     return (y_train, y_test)
 
 
-def partition_data(datadir, partition, n_nets, alpha):
+def partition_data(datadir, partition, n_nets, alpha, validxs):
+    """
+    Inputs:
+        datadir -> mnist, fashion, cifar
+        partition -> homo or hetero
+        n_nets -> number of devices
+        alpha -> hetero parameter
+        validxs -> idxs of the validation dataset
+    Outputs:
+
+    """
     logging.info("*********partition data***************")
     # load the labels from training and test data sets
     y_train, y_test = load_data(datadir)
     n_train = y_train.shape[0]
     n_test = y_test.shape[0]
+    val_size = validxs.shape[0]
     class_num = len(np.unique(y_train))
 
     if partition == "homo":
         total_num = n_train
         idxs = np.random.permutation(total_num)
+        idxs = np.setdiff1d(idxs, validxs)
         batch_idxs = np.array_split(idxs, n_nets)
         net_dataidx_map = {i: batch_idxs[i] for i in range(n_nets)}
 
     elif partition == "hetero":
         min_size = 0
         K = class_num
-        N = n_train
+        N = n_train - val_size
         logging.info("N = " + str(N))
         net_dataidx_map = {}
+        y_train[validxs] = -1  # negative labelling
 
         while min_size < 10:
             idx_batch = [[] for _ in range(n_nets)]
@@ -160,7 +175,9 @@ def partition_data(datadir, partition, n_nets, alpha):
 
 
 # for centralized training
-def get_dataloader(datadir, train_bs, test_bs, dataidxs=None, attacks=[]):
+def get_dataloader(
+    datadir, train_bs, test_bs, dataidxs=None, attacks=[], val_size=None
+):
     train_transform, test_transform = _data_transforms(datadir)
     if "cifar" in datadir:
         dl_obj = CIFAR_truncated
@@ -175,7 +192,12 @@ def get_dataloader(datadir, train_bs, test_bs, dataidxs=None, attacks=[]):
     persist = False
 
     train_ds = dl_obj(
-        datadir, dataidxs=dataidxs, train=True, transform=train_transform, download=True
+        datadir,
+        dataidxs=dataidxs,
+        train=True,
+        transform=train_transform,
+        download=True,
+        val_size=val_size,
     )
     test_ds = dl_obj(datadir, train=False, transform=test_transform, download=True)
 
@@ -198,6 +220,7 @@ def get_dataloader(datadir, train_bs, test_bs, dataidxs=None, attacks=[]):
         num_workers=workers,
         persistent_workers=persist,
     )
+    # We should create a val_dl -> No, this is called many times... we should not even have a test_dl!!!!
     test_dl = data.DataLoader(
         dataset=test_ds,
         batch_size=test_bs,
@@ -211,20 +234,53 @@ def get_dataloader(datadir, train_bs, test_bs, dataidxs=None, attacks=[]):
 
 
 def load_partition_data(
-    data_dir, partition_method, partition_alpha, client_number, batch_size, attacks
+    data_dir,
+    partition_method,
+    partition_alpha,
+    client_number,
+    batch_size,
+    attacks,
+    val_size,
 ):
+    # I changed
+    val_data_server = get_dataloader(
+        data_dir, batch_size, batch_size, dataidxs=None, attacks=[], val_size=val_size
+    )
+
     class_num, net_dataidx_map, traindata_cls_counts = partition_data(
-        data_dir, partition_method, client_number, partition_alpha
+        data_dir,
+        partition_method,
+        client_number,
+        partition_alpha,
+        validxs=val_data_server[0].dataset.validxs,
     )
 
     logging.info("traindata_cls_counts = " + str(traindata_cls_counts))
     train_data_num = sum([len(net_dataidx_map[r]) for r in range(client_number)])
 
-    train_data_global, test_data_global = get_dataloader(
-        data_dir, batch_size, batch_size
-    )
+    # this check only works for homo
+    if partition_method == "homo":
+        check_indexes = np.empty(
+            (client_number, net_dataidx_map[0].shape[0]), dtype="int64"
+        )
+        for kkk in range(client_number):
+            check_indexes[kkk] = net_dataidx_map[kkk]
+        check_indexes = check_indexes.flatten()
+        assert (
+            np.unique(check_indexes).shape[0] == check_indexes.shape[0]
+        ), "check_indexes should be an unique vector"
+        assert (
+            np.intersect1d(check_indexes, val_data_server[0].dataset.validxs).shape[0]
+            == 0
+        ), "there is an intersection with validxs"
+
+    # Marvin: I commented the following lines
+    # train_data_global, test_data_global = get_dataloader(
+    #    data_dir, batch_size, batch_size
+    # )
+
     logging.info("train_dl_global number = " + str(len(train_data_global)))
-    logging.info("test_dl_global number = " + str(len(train_data_global)))
+    logging.info("test_dl_global number = " + str(len(test_data_global)))
     test_data_num = len(test_data_global)
 
     # get local dataset
@@ -241,6 +297,7 @@ def load_partition_data(
         )
 
         # training batch size = 64; algorithms batch size = 32
+        # Marvin: Test data is available in every node??
         train_data_local, test_data_local = get_dataloader(
             data_dir, batch_size, batch_size, dataidxs, attacks[client_idx]
         )
@@ -254,10 +311,11 @@ def load_partition_data(
     return (
         train_data_num,
         test_data_num,
-        train_data_global,
-        test_data_global,
+        # train_data_global,
+        # test_data_global,
         data_local_num_dict,
         train_data_local_dict,
         test_data_local_dict,
         class_num,
     )
+    # train_data_global change to validation set!

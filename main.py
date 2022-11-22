@@ -10,8 +10,13 @@ import logging
 import os
 from collections import defaultdict
 import time
-from ctypes import *
+
+# from ctypes import * # Marvin: I changed this, maybe it crashes not much
+import ctypes
 from data_preprocessing.data_poisoning import flip_label, random_labels
+
+# Calling C functions with numpy inputs
+from numpy.ctypeslib import ndpointer
 
 # methods
 import methods.fedavg as fedavg
@@ -33,32 +38,51 @@ def set_random_seed(seed=1):
 if __name__ == "__main__":
 
     # Test calling c file
-    so_file = "./src/C_code/my_functions.so"
-    my_functions = CDLL(so_file)
-    print(my_functions.square(10))
+    # so_file = "./src/C_code/my_functions.so"
+    # my_functions = ctypes.CDLL(so_file)
+    # print(my_functions.square(10))
 
     set_random_seed()
 
+    # Parameters for calling BCJR C code
+    lib = ctypes.cdll.LoadLibrary("./src/C_code/BCJR_4_python.so")
+    fun = lib.BCJR
+    fun.restype = None
+    p_ui8_c = ndpointer(ctypes.c_uint8, flags="C_CONTIGUOUS")
+    p_d_c = ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")
+    fun.argtypes = [
+        p_ui8_c,
+        p_d_c,
+        p_ui8_c,
+        p_d_c,
+        ctypes.c_double,
+        ctypes.c_int,
+        ctypes.c_int,
+        p_d_c,
+        p_ui8_c,
+    ]
+
     # Set parameters
     args = DotMap()
-    args.method = "fedavg"  # fedavg, fedsgd
+    args.method = "fedsgd"  # fedavg, fedsgd
     args.data_dir = (
         "data/mnist"  # data/cifar100, data/cifar10, data/mnist, data/fashionmnist
     )
-    args.partition_method = "hetero"  # homo, hetero
+    args.partition_method = "homo"  # homo, hetero
     args.partition_alpha = 0.1  # in (0,1]
-    args.client_number = 4
-    args.batch_size = 64
-    args.lr = 0.0001
+    args.client_number = 15
+    args.batch_size = 100
+    args.lr = 0.01
     args.wd = 0.0001
     args.epochs = 1
-    args.comm_round = 2
+    args.comm_round = 5
     args.pretrained = False
     args.client_sample = 1.0
     args.thread_number = 1
+    args.val_size = 3000
 
     # define attacks
-    malicious_clients = [3]
+    malicious_clients = [0, 1, 2]
 
     attacks = list_of_lists = [[] for i in range(args.client_number)]
     for client in range(args.client_number):
@@ -84,6 +108,7 @@ if __name__ == "__main__":
         args.client_number,
         args.batch_size,
         attacks,
+        args.val_size,
     )
     # Model = resnet56 if 'cifar' in args.data_dir else resnet18
     if "cifar" in args.data_dir:
@@ -123,6 +148,24 @@ if __name__ == "__main__":
     for c in client_dict:
         clients.append(Client(c, args))
 
+    # Group testing parameters
+    parity_check_matrix = np.array(
+        [
+            [1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+            [0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+            [0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+            [0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0],
+            [0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+            [0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0],
+            [0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0],
+            [0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1],
+        ]
+    )
+    number_tests = parity_check_matrix.shape[0]
+    assert (
+        parity_check_matrix.shape[1] == args.client_number
+    ), "Problem with size of parity check matrix!"
+
     # ----------------------------------------
     # Prepare Server info
     server_dict = {
@@ -159,6 +202,17 @@ if __name__ == "__main__":
 
         # This is where the identification of malicious nodes should go
         # TODO: write testing
+        # Testing part
+        accuracies = []
+        for test in range(number_tests):
+            testing_rule = parity_check_matrix[test, :]
+            testing_clients = [
+                client_outputs[i]
+                for i in range(args.client_number)
+                if testing_rule[i] == 1
+            ]
+            server_outputs = server.run(testing_clients)
+            accuracies.append(server.acc)
 
         # aggregate
         server_outputs = server.run(client_outputs)

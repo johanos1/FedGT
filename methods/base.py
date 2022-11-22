@@ -386,7 +386,9 @@ class Base_Server:
         test_loss = 0.0
         test_sample_number = 0.0
         with torch.no_grad():
-            for batch_idx, (x, target) in enumerate(self.test_data):
+            for batch_idx, (x, target) in enumerate(
+                self.test_data
+            ):  # change this to self.val_data!
                 x = x.to(self.device)
                 target = target.to(self.device)
 

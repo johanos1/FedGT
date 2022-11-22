@@ -58,7 +58,7 @@ class CIFAR_truncated(data.Dataset):
                 self.download,
             )
         else:
-            cifar_dataobj = CIFAR10(
+            cifar_dataobj = CIFAR10(  # Maybe this can offer a validation set
                 self.root,
                 self.train,
                 self.transform,
@@ -117,6 +117,8 @@ class MNIST_truncated(data.Dataset):
         transform=None,
         target_transform=None,
         download=False,
+        val_size=None,
+        # validxs = None,
     ):
 
         self.root = root
@@ -125,19 +127,43 @@ class MNIST_truncated(data.Dataset):
         self.transform = transform
         self.target_transform = target_transform
         self.download = download
+        self.val_size = val_size
+        self.validxs = None  # ask about this...
 
-        self.data, self.target = self.__build_truncated_dataset__()
+        # only one 'val_size or validxs' should not be None!
+        if val_size is None:
+            self.data, self.target = self.__build_truncated_dataset__()
+        else:
+            self.data, self.target, self.validxs = self.__build_truncated_dataset__()
 
     def __build_truncated_dataset__(self):
+        """
+        Whenever val_size is not None we ask for the validation dataset and indexes (should be the first thing done!)
+        Then we output validxs and save it for later in the other function
+        we will use the validxs to initialize MNIST without the validation dataset!
+        """
 
         mnist_dataobj = MNIST(
             self.root, self.train, self.transform, self.target_transform, self.download
         )
 
-        fmnist_dataobj = FashionMNIST
+        if self.val_size is not None:
+            num_data_points = len(mnist_dataobj)
+            validxs = np.random.permutation(num_data_points)
+            validxs = validxs[0 : self.val_size]
+            data = mnist_dataobj.data
+            target = mnist_dataobj.targets
+            data = data[validxs]
+            target = target[validxs]
+            return data, target, validxs
 
         data = mnist_dataobj.data
         target = mnist_dataobj.targets
+
+        # if self.validxs is not None:
+        #    extra_points = np.setdiff1d(np.arange(num_data_points), np.array(self.validxs))
+        #    data = data[extra_points]
+        #    target = target[extra_points]
 
         if self.dataidxs is not None:
             data = data[self.dataidxs]
