@@ -16,7 +16,6 @@ class Base_Client:
 
     def __init__(self, client_dict, args):
         self.train_data = client_dict["train_data"]
-        self.test_data = client_dict["test_data"]
         self.device = client_dict["device"]
         self.model_type = client_dict["model_type"]
         self.num_classes = client_dict["num_classes"]
@@ -24,7 +23,6 @@ class Base_Client:
         self.round = 0
         self.client_map = client_dict["client_map"]
         self.train_dataloader = None
-        self.test_dataloader = None
         self.client_index = None
 
     def load_client_state_dict(self, server_state_dict: OrderedDict):
@@ -41,28 +39,23 @@ class Base_Client:
         for client_idx in self.client_map[self.round]:
             self.load_client_state_dict(received_info)
             self.train_dataloader = self.train_data[client_idx]
-            self.test_dataloader = self.test_data[client_idx]
             self.client_index = client_idx
             num_samples = len(self.train_dataloader) * self.args.batch_size
 
             if self.args.method == "fedavg":
                 weights = self.train_model()
                 # acc = self.test()
-                acc, class_prec, class_recall, class_f1 = self.test_classlevel()
+                # acc, class_prec, class_recall, class_f1 = self.test_classlevel()
                 client_results.append(
                     {
                         "weights": weights,
                         "num_samples": num_samples,
-                        "acc": acc,
-                        "class_prec": class_prec,
-                        "class_recall": class_recall,
-                        "class_f1": class_f1,
                         "client_index": self.client_index,
                     }
                 )
 
             elif self.args.method == "fedsgd":
-                gradients = self.train_gradient()
+                gradients = self.accumulate_gradients()
                 # acc = self.test()
                 acc, class_prec, class_recall, class_f1 = self.test_classlevel()
                 client_results.append(
@@ -80,7 +73,7 @@ class Base_Client:
         self.round += 1
         return client_results
 
-    def train_gradient(self):
+    def accumulate_gradients(self):
         # move model to GPU if used
         self.model.to(self.device)
         # enable training mode
@@ -129,14 +122,6 @@ class Base_Client:
                 batch_loss.append(loss.item())
             if len(batch_loss) > 0:
                 epoch_loss.append(sum(batch_loss) / len(batch_loss))
-                # logging.info(
-                #     "(client {}. Local Training Epoch: {} \tLoss: {:.6f}  Thread {}  Map {}".format(
-                #         self.client_index,
-                #         epoch,
-                #         sum(epoch_loss) / len(epoch_loss),
-                #         # current_process()._identity[0],
-                #         self.client_map[self.round],
-                #     )
                 logging.info(
                     "(client {}. Local Training Epoch: {} \tLoss: {:.6f}".format(
                         self.client_index,
@@ -148,7 +133,7 @@ class Base_Client:
         return weights
 
     def test(self) -> float:
-        """Evaluate the local model on the test set
+        """Evaluate the local model, note it is using the training set
 
         Returns:
             float: accuracy on test set
@@ -252,7 +237,7 @@ class Base_Server:
     """Base functionality for server"""
 
     def __init__(self, server_dict, args):
-        self.train_data = server_dict["train_data"]
+        self.val_data = server_dict["val_data"]
         self.test_data = server_dict["test_data"]
         self.device = (
             "cuda:{}".format(torch.cuda.device_count() - 1)
@@ -284,8 +269,8 @@ class Base_Server:
             server_outputs = self.aggregate_gradients(received_info)
 
         # check accuracy on test set
-        acc = self.test()
-        self.log_info(received_info, acc)
+        acc = self.evaluate(test_data=True)
+        # self.log_info(received_info, acc)
         self.round += 1
         # save the accuracy if it is better
         if acc > self.acc:
@@ -302,14 +287,14 @@ class Base_Server:
             config.write(json.dumps(vars(self.args)))
         return [self.model.cpu().state_dict() for x in range(self.args.thread_number)]
 
-    def log_info(self, client_info, acc):
+    # def log_info(self, client_info, acc):
 
-        client_acc = sum([c["acc"] for c in client_info]) / len(client_info)
-        out_str = "Test/AccTop1: {}, Client_Train/AccTop1: {}, round: {}\n".format(
-            acc, client_acc, self.round
-        )
-        with open("{}/out.log".format(self.save_path), "a+") as out_file:
-            out_file.write(out_str)
+    #     client_acc = sum([c["acc"] for c in client_info]) / len(client_info)
+    #     out_str = "Test/AccTop1: {}, Client_Train/AccTop1: {}, round: {}\n".format(
+    #         acc, client_acc, self.round
+    #     )
+    #     with open("{}/out.log".format(self.save_path), "a+") as out_file:
+    #         out_file.write(out_str)
 
     def aggregate_gradients(self, client_info):
 
@@ -342,7 +327,7 @@ class Base_Server:
 
         return [self.model.cpu().state_dict() for x in range(self.args.thread_number)]
 
-    def aggregate_models(self, client_info):
+    def aggregate_models(self, client_info, update_server=True):
         """Server aggregation of client models
 
         Args:
@@ -365,30 +350,51 @@ class Base_Server:
         # go through each layer in model and replace with weighted average of client models
         for key in ssd:
             ssd[key] = sum([sd[key] * cw[i] for i, sd in enumerate(client_sd)])
-        # update server model with the client average
-        self.model.load_state_dict(ssd)
 
-        if self.args.save_client:
-            # save the weights from each client
-            for client in client_info:
-                torch.save(
-                    client["weights"],
-                    "{}/client_{}.pt".format(self.save_path, client["client_index"]),
-                )
-        # return a copy of the server model for each thread
-        return [self.model.cpu().state_dict() for x in range(self.args.thread_number)]
+        if update_server is True:
+            # update server model with the client average
+            self.model.load_state_dict(ssd)
 
-    def test(self):
-        self.model.to(self.device)
-        self.model.eval()
+            if self.args.save_client:
+                # save the weights from each client
+                for client in client_info:
+                    torch.save(
+                        client["weights"],
+                        "{}/client_{}.pt".format(
+                            self.save_path, client["client_index"]
+                        ),
+                    )
+            # return a copy of the aggregated model
+            return [
+                self.model.cpu().state_dict() for x in range(self.args.thread_number)
+            ]
+        else:
+            return [ssd for x in range(self.args.thread_number)]
+
+    def evaluate(self, test_data=False, eval_model=None):
+
+        if eval_model is not None:
+            model = self.model
+            model.load_state_dict(eval_model)
+            model.to(self.device)
+            model.eval()
+        else:
+            self.model.to(self.device)
+            self.model.eval()
 
         test_correct = 0.0
-        test_loss = 0.0
+        # test_loss = 0.0
         test_sample_number = 0.0
+
+        if test_data is True:
+            data_loader = self.test_data
+        else:
+            data_loader = self.val_data
+
+        y_true = []
+        y_pred = []
         with torch.no_grad():
-            for batch_idx, (x, target) in enumerate(
-                self.test_data
-            ):  # change this to self.val_data!
+            for batch_idx, (x, target) in enumerate(data_loader):
                 x = x.to(self.device)
                 target = target.to(self.device)
 
@@ -397,9 +403,60 @@ class Base_Server:
                 _, predicted = torch.max(pred, 1)
                 correct = predicted.eq(target).sum()
 
+                y_pred.extend(predicted)
+                y_true.extend(target)
+
                 test_correct += correct.item()
                 # test_loss += loss.item() * target.size(0)
                 test_sample_number += target.size(0)
-            acc = (test_correct / test_sample_number) * 100
-            logging.info("************* Server Acc = {:.2f} **************".format(acc))
-        return acc
+            acc = test_correct / test_sample_number
+
+            if test_data is True:
+                logging.info(
+                    "************* Server Acc = {:.2f} **************".format(acc)
+                )
+
+        cf_matrix = confusion_matrix(y_true, y_pred)
+
+        # Compute TP, FP, NP, TN
+        true_pos = np.zeros(10)
+        true_neg = np.zeros(10)
+        false_pos = np.zeros(10)
+        false_neg = np.zeros(10)
+        # in the heterogeneous setting, there may be labels missing in the dataset
+        # so find the number of labels in the local dataset
+        num_classes = np.maximum(len(np.unique(y_pred)), len(np.unique(y_true)))
+        for i in range(num_classes):
+            true_pos[i] = cf_matrix[i, i].astype(np.float64)
+            false_pos[i] = (cf_matrix[:, i].sum() - true_pos[i]).astype(np.float64)
+            false_neg[i] = (cf_matrix[i, :].sum() - true_pos[i]).astype(np.float64)
+            true_neg[i] = (
+                cf_matrix.sum().sum() - true_pos[i] - false_pos[i] - false_neg[i]
+            ).astype(np.float64)
+
+        tot = len(data_loader.dataset)
+        # what fraction of positive predictions were indeed positive labels
+        class_prec = np.divide(
+            true_pos,
+            (true_pos + false_pos),
+            out=np.zeros_like(true_pos),
+            where=(true_pos + false_pos) != 0,
+        )
+        # what fraction of positive labels were predicted as positive
+        class_recall = np.divide(
+            true_pos,
+            (true_pos + false_neg),
+            out=np.zeros_like(true_pos),
+            where=(true_pos + false_neg) != 0,
+        )
+        # harmonic mean of precision and recall
+        class_f1 = 2 * np.divide(
+            (class_prec * class_recall),
+            (class_prec + class_recall),
+            out=np.zeros_like((class_prec * class_recall)),
+            where=(class_prec + class_recall) != 0,
+        )
+        # number of correct predictions from total samples
+        acc2 = (true_pos.sum()) / tot
+
+        return acc, class_prec, class_recall, class_f1

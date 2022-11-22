@@ -24,7 +24,7 @@ class CIFAR_Manager:
         root,
         dataidxs=None,
         transform=None,
-        target_transform=None,
+        val_transform=None,
         val_size=None,
         train_bs=None,
         test_bs=None,
@@ -32,7 +32,7 @@ class CIFAR_Manager:
         self.root = root
         self.dataidxs = dataidxs
         self.transform = transform
-        self.target_transform = target_transform
+        self.val_transform = val_transform
         self.val_size = val_size
         self.train_bs = train_bs
         self.test_bs = test_bs
@@ -42,7 +42,7 @@ class CIFAR_Manager:
                 self.root,
                 train,
                 self.transform,
-                self.target_transform,
+                self.val_transform,
                 download=True,
             )
         else:
@@ -50,7 +50,7 @@ class CIFAR_Manager:
                 self.root,
                 train,
                 self.transform,
-                self.target_transform,
+                self.val_transform,
                 download=True,
             )
         num_data = len(cifar_train)
@@ -61,7 +61,7 @@ class CIFAR_Manager:
         self.train_ds.dataset.targets = np.asarray(self.train_ds.dataset.targets)
 
     def get_client_dl(self, dataidxs, attacks=None):
-        client_ds = Client_Dataset(self.train_ds, dataidxs)
+        client_ds = Custom_Dataset(self.train_ds, dataidxs, self.transform)
 
         # Perform attacks before making dataloaders. Data cannot be altered afterwards
         if len(attacks) > 0:
@@ -80,7 +80,10 @@ class CIFAR_Manager:
         return self.train_ds.dataset.targets[self.train_ds.indices]
 
     def get_validation_dl(self):
-        val_dl = DataLoader(self.valid_ds, batch_size=self.train_bs)
+        val__ds = Custom_Dataset(
+            self.valid_ds, self.valid_ds.indices, self.val_transform
+        )
+        val_dl = DataLoader(val__ds, batch_size=self.train_bs)
         return val_dl
 
     def get_test_dl(self):
@@ -90,7 +93,7 @@ class CIFAR_Manager:
                 self.root,
                 train,
                 self.transform,
-                self.target_transform,
+                self.val_transform,
                 download=True,
             )
         else:
@@ -98,7 +101,7 @@ class CIFAR_Manager:
                 self.root,
                 train,
                 self.transform,
-                self.target_transform,
+                self.val_transform,
                 download=True,
             )
 
@@ -113,7 +116,7 @@ class MNIST_Manager:
         root,
         dataidxs=None,
         transform=None,
-        target_transform=None,
+        val_transform=None,
         val_size=None,
         train_bs=None,
         test_bs=None,
@@ -121,22 +124,20 @@ class MNIST_Manager:
         self.root = root
         self.dataidxs = dataidxs
         self.transform = transform
-        self.target_transform = target_transform
+        self.val_transform = val_transform
         self.val_size = val_size
         self.train_bs = train_bs
         self.test_bs = test_bs
 
         train = True
-        mnist_train = MNIST(
-            self.root, train, self.transform, self.target_transform, download=True
-        )
+        mnist_train = MNIST(self.root, train, self.transform, download=True)
         num_data = len(mnist_train)
         self.train_ds, self.valid_ds = random_split(
             mnist_train, [num_data - self.val_size, self.val_size]
         )
 
     def get_client_dl(self, dataidxs, attacks=None):
-        client_ds = Client_Dataset(self.train_ds, dataidxs)
+        client_ds = Custom_Dataset(self.train_ds, dataidxs, self.transform)
 
         # Perform attacks before making dataloaders. Data cannot be altered afterwards
         if len(attacks) > 0:
@@ -155,14 +156,15 @@ class MNIST_Manager:
         return self.train_ds.dataset.targets[self.train_ds.indices]
 
     def get_validation_dl(self):
-        val_dl = DataLoader(self.valid_ds, batch_size=self.train_bs)
+        val__ds = Custom_Dataset(
+            self.valid_ds, self.valid_ds.indices, self.val_transform
+        )
+        val_dl = DataLoader(val__ds, batch_size=self.train_bs)
         return val_dl
 
     def get_test_dl(self):
         train = False
-        fmnist_test = MNIST(
-            self.root, train, self.transform, self.target_transform, download=True
-        )
+        fmnist_test = MNIST(self.root, train, self.val_transform, download=True)
         test_dl = DataLoader(fmnist_test, batch_size=self.test_bs)
 
         return test_dl
@@ -174,25 +176,23 @@ class FMNIST_Manager:
         root,
         dataidxs=None,
         transform=None,
-        target_transform=None,
+        val_transform=None,
         val_size=None,
         train_bs=None,
         test_bs=None,
-        download=False,
     ):
 
         self.root = root
         self.dataidxs = dataidxs
         self.transform = transform
-        self.target_transform = target_transform
+        self.val_transform = val_transform
         self.val_size = val_size
         self.train_bs = train_bs
         self.test_bs = test_bs
-        self.download = download
 
         train = True
         fmnist_train = FashionMNIST(
-            self.root, train, self.transform, self.target_transform, self.download
+            self.root, train, self.transform, self.val_transform, download=True
         )
         num_data = len(fmnist_train)
         self.train_ds, self.valid_ds = random_split(
@@ -200,7 +200,7 @@ class FMNIST_Manager:
         )
 
     def get_client_dl(self, dataidxs, attacks=None):
-        client_ds = Client_Dataset(self.train_ds, dataidxs)
+        client_ds = Custom_Dataset(self.train_ds, dataidxs, self.transform)
 
         # Perform attacks before making dataloaders. Data cannot be altered afterwards
         if len(attacks) > 0:
@@ -219,25 +219,25 @@ class FMNIST_Manager:
         return self.train_ds.dataset.targets[self.train_ds.indices]
 
     def get_validation_dl(self):
-        val_dl = DataLoader(self.valid_ds, batch_size=self.train_bs)
+        val__ds = Custom_Dataset(
+            self.valid_ds, self.valid_ds.indices, self.val_transform
+        )
+        val_dl = DataLoader(val__ds, batch_size=self.train_bs)
         return val_dl
 
     def get_test_dl(self):
         train = False
-        fmnist_test = FashionMNIST(
-            self.root, train, self.transform, self.target_transform, self.download
-        )
+        fmnist_test = FashionMNIST(self.root, train, self.val_transform, download=True)
         test_dl = DataLoader(fmnist_test, batch_size=self.test_bs)
 
         return test_dl
 
 
-# This is needed to be
-class Client_Dataset(Dataset):
-    def __init__(self, ds, dataidxs, is_cifar=False):
+class Custom_Dataset(Dataset):
+    def __init__(self, ds, dataidxs, transform):
         self.data = ds.dataset.data[dataidxs]
         self.target = ds.dataset.targets[dataidxs]
-        self.is_cifar = is_cifar
+        self.transform = transform
 
     def __getitem__(self, index):
         """
@@ -248,8 +248,13 @@ class Client_Dataset(Dataset):
         """
         img, target = self.data[index], self.target[index]
 
-        # doing this so that it is consistent with all other datasets to return a PIL Image
-        img = Image.fromarray(img.numpy(), mode="L")
+        # to be consistent with CIFAR to return a PIL Image
+        if isinstance(img, np.ndarray) is False:
+            img = Image.fromarray(img.numpy(), mode="L")
+
+        if self.transform is not None:
+            img = self.transform(img)
+
         return img, target
 
     def __len__(self):

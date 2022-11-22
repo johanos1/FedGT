@@ -64,17 +64,15 @@ if __name__ == "__main__":
 
     # Set parameters
     args = DotMap()
-    args.method = "fedsgd"  # fedavg, fedsgd
-    args.data_dir = (
-        "data/mnist"  # data/cifar100, data/cifar10, data/mnist, data/fashionmnist
-    )
+    args.method = "fedavg"  # fedavg, fedsgd
+    args.data_dir = "data/fashionmnist"  # data/cifar100, data/cifar10, data/mnist, data/fashionmnist
     args.partition_method = "homo"  # homo, hetero
     args.partition_alpha = 0.1  # in (0,1]
-    args.client_number = 15
-    args.batch_size = 100
+    args.client_number = 14
+    args.batch_size = 32
     args.lr = 0.01
     args.wd = 0.0001
-    args.epochs = 1
+    args.epochs = 3
     args.comm_round = 5
     args.pretrained = False
     args.client_sample = 1.0
@@ -82,13 +80,13 @@ if __name__ == "__main__":
     args.val_size = 3000
 
     # Create attacks
-    malicious_clients = [0, 1, 2]
+    malicious_clients = [0, 1, 2, 4, 5]
     attacks = list_of_lists = [[] for i in range(args.client_number)]
     for client in range(args.client_number):
         if client in malicious_clients:
-            # label_flips = [(0, 1), (3, 2)]
-            # attacks[client].append((flip_label, label_flips))
-            attacks[client].append((random_labels,))
+            label_flips = [(0, 1)]
+            attacks[client].append((flip_label, label_flips))
+            # attacks[client].append((random_labels,))
 
     # Obtain dataset for server and the clients
     (
@@ -132,7 +130,6 @@ if __name__ == "__main__":
     client_dict = [
         {
             "train_data": train_data_local_dict,
-            "test_data": test_data_local_dict,
             "device": "cuda:{}".format(1) if torch.cuda.is_available() else "cpu",
             "client_map": mapping_dict[i],
             "model_type": Model,
@@ -160,15 +157,15 @@ if __name__ == "__main__":
         ]
     )
     number_tests = parity_check_matrix.shape[0]
-    assert (
-        parity_check_matrix.shape[1] == args.client_number
-    ), "Problem with size of parity check matrix!"
+    # assert (
+    #     parity_check_matrix.shape[1] == args.client_number
+    # ), "Problem with size of parity check matrix!"
 
     # ----------------------------------------
     # Prepare Server info
     server_dict = {
-        "train_data": train_data_global,
-        "test_data": test_data_global,
+        "val_data": server_val_dl,
+        "test_data": server_test_dl,
         "model_type": Model,
         "num_classes": class_num,
     }
@@ -198,19 +195,22 @@ if __name__ == "__main__":
 
         client_outputs = [c for sublist in client_outputs for c in sublist]
 
-        # This is where the identification of malicious nodes should go
-        # TODO: write testing
-        # Testing part
-        accuracies = []
-        for test in range(number_tests):
-            testing_rule = parity_check_matrix[test, :]
-            testing_clients = [
-                client_outputs[i]
-                for i in range(args.client_number)
-                if testing_rule[i] == 1
-            ]
-            server_outputs = server.run(testing_clients)
-            accuracies.append(server.acc)
+        # Test groups of clients on server validation set
+        acc = np.zeros(number_tests)
+        f1 = []
+        for i in range(number_tests):
+            # np.where gives a tuple where first entry is the list we want
+            client_idxs = np.where(parity_check_matrix[i, :] == 1)[0].tolist()
+            group = []
+            for idx in client_idxs:
+                group.append(client_outputs[idx - 1])
+
+            # aggregation returns a list so pick the (only) item
+            model = server.aggregate_models(group, update_server=False)[0]
+            # note, aside from accuracy, we have access to precision, recall, and f1 score for each class
+            acc[i], class_precision, class_recall, class_f1 = server.evaluate(
+                test_data=False, eval_model=model
+            )
 
         # aggregate
         server_outputs = server.run(client_outputs)
