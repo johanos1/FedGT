@@ -1,9 +1,9 @@
 import torch
 import numpy as np
 import random
+from dotmap import DotMap
 
 import data_preprocessing.data_loader as dl
-import argparse
 from models.resnet import resnet56, resnet18
 from models.logistic_regression import logistic_regression
 from torch.multiprocessing import set_start_method, Queue
@@ -11,10 +11,17 @@ import logging
 import os
 from collections import defaultdict
 import time
-from ctypes import *
+
+import ctypes
+
+# Calling C functions with numpy inputs
+from numpy.ctypeslib import ndpointer
+
+from data_preprocessing.data_poisoning import flip_label, random_labels
 
 # methods
 import methods.fedavg as fedavg
+import methods.fedsgd as fedsgd
 
 # https://stackoverflow.com/questions/6974695/python-process-pool-non-daemonic#:~:text=As%20of%20Python,answer%20by%20jfs
 from concurrent.futures import ProcessPoolExecutor as Pool
@@ -54,114 +61,6 @@ def allocate_clients_to_threads(args):
     return mapping_dict
 
 
-def add_args(parser):
-    # Training settings
-    parser.add_argument(
-        "--method",
-        type=str,
-        default="fedavg",
-        metavar="N",
-        help="Options are: fedavg, fedprox, moon, mixup, stochdepth, gradaug, fedalign",
-    )
-
-    parser.add_argument(
-        "--data_dir",
-        type=str,
-        default="data/cifar10",
-        help="data directory: data/cifar100, data/cifar10, or another dataset",
-    )
-
-    parser.add_argument(
-        "--partition_method",
-        type=str,
-        default="homo",
-        metavar="N",
-        help="how to partition the dataset on local clients",
-    )
-
-    parser.add_argument(
-        "--partition_alpha",
-        type=float,
-        default=0.5,
-        metavar="PA",
-        help="alpha value for Dirichlet distribution partitioning of data(default: 0.5)",
-    )
-
-    parser.add_argument(
-        "--client_number",
-        type=int,
-        default=2,
-        metavar="NN",
-        help="number of clients in the FL system",
-    )
-
-    parser.add_argument(
-        "--batch_size",
-        type=int,
-        default=64,
-        metavar="N",
-        help="input batch size for training (default: 64)",
-    )
-
-    parser.add_argument(
-        "--lr",
-        type=float,
-        default=0.01,
-        metavar="LR",
-        help="learning rate (default: 0.01)",
-    )
-
-    parser.add_argument(
-        "--wd", help="weight decay parameter;", type=float, default=0.0001
-    )
-
-    parser.add_argument(
-        "--epochs",
-        type=int,
-        default=1,
-        metavar="EP",
-        help="how many epochs will be trained locally per round",
-    )
-
-    parser.add_argument(
-        "--comm_round",
-        type=int,
-        default=25,
-        help="how many rounds of communications are conducted",
-    )
-
-    parser.add_argument(
-        "--pretrained", action="store_true", default=False, help="test pretrained model"
-    )
-
-    parser.add_argument(
-        "--save_client",
-        action="store_true",
-        default=False,
-        help="Save client checkpoints each round",
-    )
-
-    parser.add_argument(
-        "--thread_number",
-        type=int,
-        default=1,
-        metavar="NN",
-        help="number of parallel training threads",
-    )
-
-    parser.add_argument(
-        "--client_sample",
-        type=float,
-        default=1.0,
-        metavar="MT",
-        help="Fraction of clients to sample",
-    )
-
-    args = parser.parse_args()
-
-    return args
-
-
 # Setup Functions
 def set_random_seed(seed=1):
     random.seed(seed)
@@ -177,29 +76,46 @@ def set_random_seed(seed=1):
 
 if __name__ == "__main__":
 
-    # Test calling c file
-    so_file = "./src/C_code/my_functions.so"
-    my_functions = CDLL(so_file)
-    print(my_functions.square(10))
-
     try:
         set_start_method("spawn")
     except RuntimeError:
         pass
     set_random_seed()
-    # get arguments
-    parser = argparse.ArgumentParser()
-    args = add_args(parser)
 
-    # get data
+    # get arguments
+    args = DotMap()
+    args.method = "fedavg"  # fedavg, fedsgd
+    args.data_dir = "data/fashionmnist"  # data/cifar100, data/cifar10, data/mnist, data/fashionmnist
+    args.partition_method = "homo"  # homo, hetero
+    args.partition_alpha = 0.1  # in (0,1]
+    args.client_number = 14
+    args.batch_size = 32
+    args.lr = 0.01
+    args.wd = 0.0001
+    args.epochs = 1
+    args.comm_round = 1
+    args.pretrained = False
+    args.client_sample = 1.0
+    args.thread_number = 7
+    args.val_size = 3000
+
+    # Create attacks
+    malicious_clients = [0, 1, 2, 4, 5]
+    attacks = list_of_lists = [[] for i in range(args.client_number)]
+    for client in range(args.client_number):
+        if client in malicious_clients:
+            label_flips = [(0, 1)]
+            attacks[client].append((flip_label, label_flips))
+            # attacks[client].append((random_labels,))
+
+    # Obtain dataset for server and the clients
     (
-        train_data_num,
+        val_data_num,
         test_data_num,
-        train_data_global,
-        test_data_global,
+        server_val_dl,
+        server_test_dl,
         data_local_num_dict,
         train_data_local_dict,
-        test_data_local_dict,
         class_num,
     ) = dl.load_partition_data(
         args.data_dir,
@@ -207,7 +123,24 @@ if __name__ == "__main__":
         args.partition_alpha,
         args.client_number,
         args.batch_size,
+        attacks,
+        args.val_size,
     )
+
+    # Model = resnet56 if 'cifar' in args.data_dir else resnet18
+    if "cifar" in args.data_dir:
+        Model = resnet18
+    elif "mnist" in args.data_dir:
+        Model = logistic_regression
+
+    # init method and model type
+    if args.method == "fedavg":
+        Client = fedavg.Client
+        Server = fedavg.Server
+
+    elif args.method == "fedsgd":
+        Client = fedsgd.Client
+        Server = fedsgd.Server
 
     mapping_dict = allocate_clients_to_threads(args)
     # init method and model type
@@ -217,8 +150,8 @@ if __name__ == "__main__":
         # Model = resnet56 if 'cifar' in args.data_dir else resnet18
         Model = logistic_regression
         server_dict = {
-            "train_data": train_data_global,
-            "test_data": test_data_global,
+            "val_data": server_val_dl,
+            "test_data": server_test_dl,
             "model_type": Model,
             "num_classes": class_num,
         }
@@ -239,7 +172,6 @@ if __name__ == "__main__":
     client_dict = [
         {
             "train_data": train_data_local_dict,
-            "test_data": test_data_local_dict,
             "device": "cuda:{}".format(i % torch.cuda.device_count())
             if torch.cuda.is_available()
             else "cpu",
@@ -254,6 +186,21 @@ if __name__ == "__main__":
     for i in range(args.thread_number):
         client_info.put((client_dict[i], args))
 
+    # Group testing parameters
+    parity_check_matrix = np.array(
+        [
+            [1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+            [0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+            [0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+            [0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0],
+            [0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+            [0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0],
+            [0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0],
+            [0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1],
+        ]
+    )
+    number_tests = parity_check_matrix.shape[0]
+
     # each thread will create a client object containing the client information
     with Pool(
         max_workers=args.thread_number,
@@ -265,6 +212,26 @@ if __name__ == "__main__":
             round_start = time.time()
             client_outputs = pool.map(run_clients, server_outputs)
             client_outputs = [c for sublist in client_outputs for c in sublist]
+
+            # Test groups of clients on server validation set
+            acc = np.zeros(number_tests)
+            f1 = []
+            for i in range(number_tests):
+                # np.where gives a tuple where first entry is the list we want
+                client_idxs = np.where(parity_check_matrix[i, :] == 1)[0].tolist()
+                group = []
+                for idx in client_idxs:
+                    group.append(client_outputs[idx - 1])
+
+                # aggregation returns a list so pick the (only) item
+                model = server.aggregate_models(group, update_server=False)[0]
+                # note, aside from accuracy, we have access to precision, recall, and f1 score for each class
+                acc[i], class_precision, class_recall, class_f1 = server.evaluate(
+                    test_data=False, eval_model=model
+                )
+
+            # aggregate
             server_outputs = server.run(client_outputs)
+
             round_end = time.time()
             logging.info("Round {} Time: {}s".format(r, round_end - round_start))

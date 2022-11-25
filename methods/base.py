@@ -269,7 +269,7 @@ class Base_Server:
             server_outputs = self.aggregate_gradients(received_info)
 
         # check accuracy on test set
-        acc = self.evaluate(test_data=True)
+        acc, class_prec, class_recall, class_f1 = self.evaluate(test_data=True)
         # self.log_info(received_info, acc)
         self.round += 1
         # save the accuracy if it is better

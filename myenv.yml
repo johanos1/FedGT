@@ -1,8 +1,10 @@
-name: myenv
-
+name: tum_chalmers
+channels:
+  - conda-forge
+  - defaults
 dependencies:
-  - torchvision=0.12.0
-  - torch=1.12.1
-  - numpy=1.23.4
-  - dotmap=1.3.30
-  - scikit-learn=1.1.3
+  - torchvision
+  - pytorch
+  - numpy
+  - dotmap
+  - scikit-learn
