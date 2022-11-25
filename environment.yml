@@ -1,0 +1,10 @@
+name: tum_chalmers
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - torchvision
+  - pytorch
+  - numpy
+  - dotmap
+  - scikit-learn
