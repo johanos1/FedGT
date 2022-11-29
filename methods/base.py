@@ -273,11 +273,11 @@ class Base_Server:
         # self.log_info(received_info, acc)
         self.round += 1
         # save the accuracy if it is better
-        if acc > self.acc:
+        if acc[0] > self.acc:
             torch.save(
                 self.model.state_dict(), "{}/{}.pt".format(self.save_path, "server")
             )
-            self.acc = acc
+            self.acc = acc[0]
 
         # return global model
         return server_outputs
