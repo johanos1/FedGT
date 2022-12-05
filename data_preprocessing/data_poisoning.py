@@ -35,3 +35,17 @@ def random_labels(ds: data.Dataset) -> data.Dataset:
     num_classes = len(np.unique(ds.target))
     ds.target = torch.from_numpy(np.random.randint(num_classes, size=(n_labels,)))
     return ds
+
+def permute_labels(ds: data.Dataset) -> data.Dataset:
+    """permute the labels in dataset
+    Args:
+        ds (data.Dataset): dataset to poison
+    Returns:
+        data.Dataset: posioned dataset
+    """
+    num_classes = len(np.unique(ds.target))
+    target_array = ds.target.cpu().detach().numpy()
+    for label in range(num_classes):
+        target_array[target_array == label] = (label + 1) % num_classes
+    ds.target = torch.from_numpy(target_array)
+    return ds

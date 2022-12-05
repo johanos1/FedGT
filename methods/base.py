@@ -9,6 +9,7 @@ import json
 from torch.multiprocessing import current_process
 from sklearn.metrics import confusion_matrix, classification_report
 import numpy as np
+import copy
 
 
 class Base_Client:
@@ -46,9 +47,16 @@ class Base_Client:
                 weights = self.train_model()
                 # acc = self.test()
                 # acc, class_prec, class_recall, class_f1 = self.test_classlevel()
+                # client_results.append(
+                #    {
+                #        "weights": weights,
+                #        "num_samples": num_samples,
+                #        "client_index": self.client_index,
+                #    }
+                # )
                 client_results.append(
                     {
-                        "weights": weights,
+                        "weights": copy.deepcopy(weights),
                         "num_samples": num_samples,
                         "client_index": self.client_index,
                     }
@@ -403,17 +411,17 @@ class Base_Server:
                 _, predicted = torch.max(pred, 1)
                 correct = predicted.eq(target).sum()
 
-                y_pred.extend(predicted)
-                y_true.extend(target)
+                y_pred.extend(predicted.cpu())
+                y_true.extend(target.cpu())
 
                 test_correct += correct.item()
                 # test_loss += loss.item() * target.size(0)
                 test_sample_number += target.size(0)
             acc = test_correct / test_sample_number
 
-            if test_data is True:
+            if test_data is True and eval_model is None:
                 logging.info(
-                    "************* Server Acc = {:.2f} **************".format(acc)
+                    "************* Server Acc = {:.4f} **************".format(acc)
                 )
 
         cf_matrix = confusion_matrix(y_true, y_pred)

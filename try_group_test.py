@@ -33,5 +33,5 @@ LLRO = np.empty((1, N), dtype=np.double)
 DEC = np.empty((1, N), dtype=np.uint8)
 # Call of the function
 fun(H, LLRi, test_vec, ChannelMatrix, threshold_dec, N, r, LLRO, DEC)
-print(LLRO)
-print(DEC)
+# print(LLRO)
+# print(DEC)
