@@ -6,7 +6,6 @@ Code based on https://github.com/FedML-AI/FedML
 
 import logging
 import numpy as np
-import torch.utils.data as data
 from PIL import Image
 from torchvision.datasets import CIFAR10, CIFAR100, MNIST, FashionMNIST
 from torch.utils.data import random_split, DataLoader, Dataset

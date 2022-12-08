@@ -8,16 +8,18 @@ from models.resnet import resnet56, resnet18
 from models.logistic_regression import logistic_regression
 from torch.multiprocessing import set_start_method, Queue
 import logging
+
 import os
 from collections import defaultdict
 import time
-
+import numpy as np
 import ctypes
+import matplotlib.pyplot as plt
 
 # Calling C functions with numpy inputs
 from numpy.ctypeslib import ndpointer
 
-from data_preprocessing.data_poisoning import flip_label, random_labels
+from data_preprocessing.data_poisoning import flip_label, random_labels, permute_labels
 
 # methods
 import methods.fedavg as fedavg
@@ -76,162 +78,288 @@ def set_random_seed(seed=1):
 
 if __name__ == "__main__":
 
-    try:
-        set_start_method("spawn")
-    except RuntimeError:
-        pass
-    set_random_seed()
-
-    # get arguments
     args = DotMap()
-    args.method = "fedavg"  # fedavg, fedsgd
-    args.data_dir = "data/fashionmnist"  # data/cifar100, data/cifar10, data/mnist, data/fashionmnist
-    args.partition_method = "homo"  # homo, hetero
-    args.partition_alpha = 0.1  # in (0,1]
-    args.client_number = 14
-    args.batch_size = 32
     args.lr = 0.01
     args.wd = 0.0001
     args.epochs = 1
     args.comm_round = 1
-    args.pretrained = False
+    args.pretrained = True
     args.client_sample = 1.0
-    args.thread_number = 7
+    args.thread_number = 5
     args.val_size = 3000
+    args.method = "fedavg"  # fedavg, fedsgd
+    args.data_dir = "data/cifar10"  # data/cifar100, data/cifar10, data/mnist, data/fashionmnist
+    args.partition_method = "homo"  # homo, hetero
+    args.partition_alpha = 0.1  # in (0,1]
+    args.client_number = 15
 
-    # Create attacks
-    malicious_clients = [0, 1, 2, 4, 5]
-    attacks = list_of_lists = [[] for i in range(args.client_number)]
-    for client in range(args.client_number):
-        if client in malicious_clients:
-            label_flips = [(0, 1)]
-            attacks[client].append((flip_label, label_flips))
-            # attacks[client].append((random_labels,))
+    fig_acc, ax_acc = plt.subplots(nrows=2, ncols=2, figsize=(18, 5))
+    fig_prec, ax_prec = plt.subplots(nrows=2, ncols=2, figsize=(18, 5))
+    fig_recall, ax_recall = plt.subplots(nrows=2, ncols=2, figsize=(18, 5))
+    bs_list = [16, 32, 64, 128, 256, 512]
+    mali_users_list = [1, 3, 5, 7]
+    results = np.zeros((4, 8, len(bs_list)))
+    for jj, mali_users in enumerate(mali_users_list):
+        for ii, bs in enumerate(bs_list):
+            try:
+                set_start_method("spawn")
+            except RuntimeError:
+                pass
+            set_random_seed()
 
-    # Obtain dataset for server and the clients
-    (
-        val_data_num,
-        test_data_num,
-        server_val_dl,
-        server_test_dl,
-        data_local_num_dict,
-        train_data_local_dict,
-        class_num,
-    ) = dl.load_partition_data(
-        args.data_dir,
-        args.partition_method,
-        args.partition_alpha,
-        args.client_number,
-        args.batch_size,
-        attacks,
-        args.val_size,
-    )
+            # get arguments
 
-    # Model = resnet56 if 'cifar' in args.data_dir else resnet18
-    if "cifar" in args.data_dir:
-        Model = resnet18
-    elif "mnist" in args.data_dir:
-        Model = logistic_regression
+            args.batch_size = bs
 
-    # init method and model type
-    if args.method == "fedavg":
-        Client = fedavg.Client
-        Server = fedavg.Server
+            # Create attacks
+            # malicious_clients = [0, 1, 2, 9, 11]
+            mali_number = mali_users
+            malicious_clients = np.random.permutation(args.client_number)
+            malicious_clients = malicious_clients[:mali_number].tolist()
+            attacks = list_of_lists = [[] for i in range(args.client_number)]
+            for client in range(args.client_number):
+                if client in malicious_clients:
+                    # label_flips = [(2, 5),(1,7)]
+                    # attacks[client].append((flip_label, label_flips))
+                    attacks[client].append((random_labels,))
+                    # attacks[client].append((permute_labels,))
 
-    elif args.method == "fedsgd":
-        Client = fedsgd.Client
-        Server = fedsgd.Server
+            # Obtain dataset for server and the clients
+            (
+                val_data_num,
+                test_data_num,
+                server_val_dl,
+                server_test_dl,
+                data_local_num_dict,
+                train_data_local_dict,
+                class_num,
+            ) = dl.load_partition_data(
+                args.data_dir,
+                args.partition_method,
+                args.partition_alpha,
+                args.client_number,
+                args.batch_size,
+                attacks,
+                args.val_size,
+            )
 
-    mapping_dict = allocate_clients_to_threads(args)
-    # init method and model type
-    if args.method == "fedavg":
-        Server = fedavg.Server
-        Client = fedavg.Client
-        # Model = resnet56 if 'cifar' in args.data_dir else resnet18
-        Model = logistic_regression
-        server_dict = {
-            "val_data": server_val_dl,
-            "test_data": server_test_dl,
-            "model_type": Model,
-            "num_classes": class_num,
-        }
+            # Model = resnet56 if 'cifar' in args.data_dir else resnet18
+            if "cifar" in args.data_dir:
+                Model = resnet18
+            elif "mnist" in args.data_dir:
+                Model = logistic_regression
 
-    # init server
-    server_dict["save_path"] = "{}/logs/{}__{}_e{}_c{}".format(
-        os.getcwd(),
-        time.strftime("%Y%m%d_%H%M%S"),
-        args.method,
-        args.epochs,
-        args.client_number,
-    )
-    if not os.path.exists(server_dict["save_path"]):
-        os.makedirs(server_dict["save_path"])
-    server = Server(server_dict, args)
-    server_outputs = server.start()
+            # init method and model type
+            if args.method == "fedavg":
+                Client = fedavg.Client
+                Server = fedavg.Server
 
-    client_dict = [
-        {
-            "train_data": train_data_local_dict,
-            "device": "cuda:{}".format(i % torch.cuda.device_count())
-            if torch.cuda.is_available()
-            else "cpu",
-            "client_map": mapping_dict[i],
-            "model_type": Model,
-            "num_classes": class_num,
-        }
-        for i in range(args.thread_number)
-    ]
-    # init nodes
-    client_info = Queue()
-    for i in range(args.thread_number):
-        client_info.put((client_dict[i], args))
+            elif args.method == "fedsgd":
+                Client = fedsgd.Client
+                Server = fedsgd.Server
 
-    # Group testing parameters
-    parity_check_matrix = np.array(
-        [
-            [1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
-            [0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
-            [0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0],
-            [0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0],
-            [0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0],
-            [0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0],
-            [0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0],
-            [0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1],
-        ]
-    )
-    number_tests = parity_check_matrix.shape[0]
+            mapping_dict = allocate_clients_to_threads(args)
+            # init method and model type
+            if args.method == "fedavg":
+                Server = fedavg.Server
+                Client = fedavg.Client
+                # Model = resnet56 if 'cifar' in args.data_dir else resnet18
+                Model = logistic_regression
+                server_dict = {
+                    "val_data": server_val_dl,
+                    "test_data": server_test_dl,
+                    "model_type": Model,
+                    "num_classes": class_num,
+                }
 
-    # each thread will create a client object containing the client information
-    with Pool(
-        max_workers=args.thread_number,
-        initializer=init_process,
-        initargs=(client_info, Client),
-    ) as pool:
-        for r in range(args.comm_round):
-            logging.info("************** Round: {} ***************".format(r))
-            round_start = time.time()
-            client_outputs = pool.map(run_clients, server_outputs)
-            client_outputs = [c for sublist in client_outputs for c in sublist]
+            # init server
+            server_dict["save_path"] = "{}/logs/{}__{}_e{}_c{}".format(
+                os.getcwd(),
+                time.strftime("%Y%m%d_%H%M%S"),
+                args.method,
+                args.epochs,
+                args.client_number,
+            )
+            if not os.path.exists(server_dict["save_path"]):
+                os.makedirs(server_dict["save_path"])
+            server = Server(server_dict, args)
+            server_outputs = server.start()
 
-            # Test groups of clients on server validation set
-            acc = np.zeros(number_tests)
-            f1 = []
-            for i in range(number_tests):
-                # np.where gives a tuple where first entry is the list we want
-                client_idxs = np.where(parity_check_matrix[i, :] == 1)[0].tolist()
-                group = []
-                for idx in client_idxs:
-                    group.append(client_outputs[idx - 1])
+            client_dict = [
+                {
+                    "train_data": train_data_local_dict,
+                    "device": "cuda:{}".format(i % torch.cuda.device_count())
+                    if torch.cuda.is_available()
+                    else "cpu",
+                    "client_map": mapping_dict[i],
+                    "model_type": Model,
+                    "num_classes": class_num,
+                }
+                for i in range(args.thread_number)
+            ]
+            # init nodes
+            client_info = Queue()
+            for i in range(args.thread_number):
+                client_info.put((client_dict[i], args))
 
-                # aggregation returns a list so pick the (only) item
-                model = server.aggregate_models(group, update_server=False)[0]
-                # note, aside from accuracy, we have access to precision, recall, and f1 score for each class
-                acc[i], class_precision, class_recall, class_f1 = server.evaluate(
-                    test_data=False, eval_model=model
-                )
+            # Group testing parameters
+            parity_check_matrix = np.array(
+                [
+                    [1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+                    [0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+                    [0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+                    [0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0],
+                    [0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+                    [0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0],
+                    [0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0],
+                    [0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1],
+                ]
+            )
+            number_tests = parity_check_matrix.shape[0]
 
-            # aggregate
-            server_outputs = server.run(client_outputs)
+            # each thread will create a client object containing the client information
+            with Pool(
+                max_workers=args.thread_number,
+                initializer=init_process,
+                initargs=(client_info, Client),
+            ) as pool:
+                for r in range(args.comm_round):
+                    logging.info("************** Round: {} ***************".format(r))
+                    round_start = time.time()
+                    client_outputs = pool.map(run_clients, server_outputs)
+                    client_outputs = [c for sublist in client_outputs for c in sublist]
+                    client_outputs.sort(key=lambda tup: tup["client_index"])
+                    # Test groups of clients on server validation set
+                    acc = np.zeros(number_tests)
+                    f1 = []
+                    prec = []
+                    recall = []
+                    syndrome = []
+                    pca_array = np.zeros(shape=(number_tests, 7850))
 
-            round_end = time.time()
-            logging.info("Round {} Time: {}s".format(r, round_end - round_start))
+                    for i in range(number_tests):
+                        # np.where gives a tuple where first entry is the list we want
+                        client_idxs = np.where(parity_check_matrix[i, :] == 1)[
+                            0
+                        ].tolist()
+                        syndrome.append(len(set(client_idxs) & set(malicious_clients)))
+                        group = []
+                        for idx in client_idxs:
+                            group.append(client_outputs[idx])
+
+                        # aggregation returns a list so pick the (only) item
+                        model = server.aggregate_models(group, update_server=False)[0]
+                        # -----------------------------------------
+                        # test with validation data!
+                        (
+                            acc[i],
+                            class_precision,
+                            class_recall,
+                            class_f1,
+                        ) = server.evaluate(test_data=False, eval_model=model)
+                        f1.append(class_f1)
+
+                        k = 5
+                        idx = np.argpartition(f1[i], k)
+                        prec.append(np.mean(class_precision[idx[:k]]))
+                        recall.append(np.mean(class_recall[idx[:k]]))
+
+                        # -----------------------------------------
+                        # test without validation data!
+                    #     import sklearn.decomposition
+
+                    #     tmp = np.empty(
+                    #         shape=[
+                    #             0,
+                    #         ]
+                    #     )
+                    #     for key in model:
+                    #         tmp = np.concatenate(
+                    #             (tmp, model[key].cpu().detach().numpy().flatten())
+                    #         )
+                    #     pca_array[i, :] = tmp
+
+                    # pca = sklearn.decomposition.PCA(n_components=1)
+                    # pcas = pca.fit_transform(np.array(pca_array))
+
+                    # legend_str = []
+                    # for val in np.unique(np.array(syndrome)):
+                    #     indxs = np.where(syndrome == val)[0].tolist()
+                    #     plt.scatter(pcas[indxs, 0], pcas[indxs, 1])
+                    #     legend_str.append(str(val))
+                    # plt.legend(legend_str)
+
+                    indx = np.argsort(np.array(syndrome))
+                    # pcas = pcas[indx, :]
+                    results[0, :, ii] = np.array(syndrome)[indx]
+                    results[1, :, ii] = acc[indx]
+                    results[2, :, ii] = np.array(prec)[indx]
+                    results[3, :, ii] = np.array(recall)[indx]
+                    # results[3, :, ii] = np.squeeze(pcas)
+
+                    np.set_printoptions(
+                        formatter={"float": lambda x: "{0:0.3f}".format(x)}
+                    )
+                    logging.info(
+                        f"malicious nodes: {mali_number}\nsyndrome: {results[0,:]}\naccuracy: {results[1,:]}\nprecision: {results[2,:]}\nrecall: {results[3,:]} "
+                    )
+
+                    # aggregate
+                    for mal in malicious_clients:
+                        del client_outputs[mal]
+                    server_outputs = server.run(client_outputs)
+
+                    round_end = time.time()
+                    logging.info(
+                        "Round {} Time: {}s".format(r, round_end - round_start)
+                    )
+
+        acc = np.squeeze(results[1, :, :])
+        prec = np.squeeze(results[2, :, :])
+        recall = np.squeeze(results[3, :, :])
+        x = np.array(bs_list)
+
+        if jj == 0:
+            row = 0
+            col = 0
+        elif jj == 1:
+            row = 0
+            col = 1
+        elif jj == 2:
+            row = 1
+            col = 0
+        else:
+            row = 1
+            col = 1
+
+        for y in range(number_tests):
+
+            ax_acc[row, col].plot(x, acc[y, :])
+            ax_prec[row, col].plot(x, prec[y, :])
+            ax_recall[row, col].plot(x, recall[y, :])
+
+        tmp = list(results[0, :, 0])
+        tmp = list(map(int, tmp))
+        tmp = list(map(str, tmp))
+
+        sim_title = f"Epochs: {args.epochs}, {mali_users} malicious users, attack: random labels"
+
+        ax_acc[row, col].legend(tmp)
+        ax_acc[row, col].set_xlabel("Batch size")
+        ax_acc[row, col].set_ylabel("Accuracy")
+        ax_acc[row, col].set_xticks(x)
+        ax_acc[row, col].set_title(sim_title)
+
+        ax_prec[row, col].legend(tmp)
+        ax_prec[row, col].set_xlabel("Batch size")
+        ax_prec[row, col].set_ylabel("Min class precision")
+        ax_prec[row, col].set_xticks(x)
+        ax_prec[row, col].set_title(sim_title)
+
+        ax_recall[row, col].legend(tmp)
+        ax_recall[row, col].set_xlabel("Batch size")
+        ax_recall[row, col].set_ylabel("Min class recall")
+        ax_recall[row, col].set_xticks(x)
+        ax_recall[row, col].set_title(sim_title)
+
+    plt.show()

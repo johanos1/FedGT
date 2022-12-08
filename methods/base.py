@@ -9,6 +9,7 @@ import json
 from torch.multiprocessing import current_process
 from sklearn.metrics import confusion_matrix, classification_report
 import numpy as np
+import copy
 
 
 class Base_Client:
@@ -35,6 +36,7 @@ class Base_Client:
         self.model.load_state_dict(server_state_dict)
 
     def run(self, received_info):
+
         client_results = []
         for client_idx in self.client_map[self.round]:
             self.load_client_state_dict(received_info)
@@ -43,12 +45,11 @@ class Base_Client:
             num_samples = len(self.train_dataloader) * self.args.batch_size
 
             if self.args.method == "fedavg":
+
                 weights = self.train_model()
-                # acc = self.test()
-                # acc, class_prec, class_recall, class_f1 = self.test_classlevel()
                 client_results.append(
                     {
-                        "weights": weights,
+                        "weights": copy.deepcopy(weights),
                         "num_samples": num_samples,
                         "client_index": self.client_index,
                     }
@@ -57,15 +58,11 @@ class Base_Client:
             elif self.args.method == "fedsgd":
                 gradients = self.accumulate_gradients()
                 # acc = self.test()
-                acc, class_prec, class_recall, class_f1 = self.test_classlevel()
+                # acc, class_prec, class_recall, class_f1 = self.test_classlevel()
                 client_results.append(
                     {
                         "gradients": gradients,
                         "num_samples": num_samples,
-                        "acc": acc,
-                        "class_prec": class_prec,
-                        "class_recall": class_recall,
-                        "class_f1": class_f1,
                         "client_index": self.client_index,
                     }
                 )
@@ -374,7 +371,7 @@ class Base_Server:
     def evaluate(self, test_data=False, eval_model=None):
 
         if eval_model is not None:
-            model = self.model
+            model = copy.deepcopy(self.model)
             model.load_state_dict(eval_model)
             model.to(self.device)
             model.eval()
@@ -397,14 +394,17 @@ class Base_Server:
             for batch_idx, (x, target) in enumerate(data_loader):
                 x = x.to(self.device)
                 target = target.to(self.device)
+                if eval_model is None:
+                    pred = self.model(x)
+                else:
+                    pred = model(x)
 
-                pred = self.model(x)
                 # loss = self.criterion(pred, target)
                 _, predicted = torch.max(pred, 1)
                 correct = predicted.eq(target).sum()
 
-                y_pred.extend(predicted)
-                y_true.extend(target)
+                y_pred.extend(predicted.cpu())
+                y_true.extend(target.cpu())
 
                 test_correct += correct.item()
                 # test_loss += loss.item() * target.size(0)
