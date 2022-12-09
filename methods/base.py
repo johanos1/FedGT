@@ -419,13 +419,14 @@ class Base_Server:
         cf_matrix = confusion_matrix(y_true, y_pred)
 
         # Compute TP, FP, NP, TN
-        true_pos = np.zeros(10)
-        true_neg = np.zeros(10)
-        false_pos = np.zeros(10)
-        false_neg = np.zeros(10)
+        num_classes = np.maximum(len(np.unique(y_pred)), len(np.unique(y_true)))
+        true_pos = np.zeros(num_classes)
+        true_neg = np.zeros(num_classes)
+        false_pos = np.zeros(num_classes)
+        false_neg = np.zeros(num_classes)
         # in the heterogeneous setting, there may be labels missing in the dataset
         # so find the number of labels in the local dataset
-        num_classes = np.maximum(len(np.unique(y_pred)), len(np.unique(y_true)))
+        
         for i in range(num_classes):
             true_pos[i] = cf_matrix[i, i].astype(np.float64)
             false_pos[i] = (cf_matrix[:, i].sum() - true_pos[i]).astype(np.float64)

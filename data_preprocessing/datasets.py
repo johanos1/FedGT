@@ -1,14 +1,10 @@
-"""
-Dataset Concstruction
-Code based on https://github.com/FedML-AI/FedML
-"""
-
-
 import logging
 import numpy as np
 from PIL import Image
 from torchvision.datasets import CIFAR10, CIFAR100, MNIST, FashionMNIST
 from torch.utils.data import random_split, DataLoader, Dataset
+from torch.utils.data.sampler import SubsetRandomSampler
+import torch
 
 from data_preprocessing.data_poisoning import flip_label, random_labels
 
@@ -16,13 +12,25 @@ logging.basicConfig()
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+IMG_EXTENSIONS = (
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".ppm",
+    ".bmp",
+    ".pgm",
+    ".tif",
+    ".tiff",
+    ".webp",
+)
 
-class CIFAR_Manager:
+
+class Data_Manager:
     def __init__(
         self,
         root,
         dataidxs=None,
-        transform=None,
+        train_transform=None,
         val_transform=None,
         val_size=None,
         train_bs=None,
@@ -30,37 +38,44 @@ class CIFAR_Manager:
     ):
         self.root = root
         self.dataidxs = dataidxs
-        self.transform = transform
+        self.train_transform = train_transform
         self.val_transform = val_transform
         self.val_size = val_size
         self.train_bs = train_bs
         self.test_bs = test_bs
-        train = True
-        if "cifar100" in self.root:
-            cifar_train = CIFAR100(
-                self.root,
-                train,
-                self.transform,
-                self.val_transform,
-                download=True,
-            )
+        self.is_mnist = False
+
+        if "fashionmnist" in self.root:
+            dataObj = FashionMNIST
+            self.is_mnist = True
+        elif "mnist" in self.root:
+            dataObj = MNIST
+            self.is_mnist = True
+        elif "cifar100" in self.root:
+            dataObj = CIFAR100
+        elif "cifar10" in self.root:
+            dataObj = CIFAR10
         else:
-            cifar_train = CIFAR10(  # Maybe this can offer a validation set
-                self.root,
-                train,
-                self.transform,
-                self.val_transform,
-                download=True,
-            )
-        num_data = len(cifar_train)
-        self.train_ds, self.valid_ds = random_split(
-            cifar_train, [num_data - self.val_size, self.val_size]
+            logger.info("Dataset not supported")
+            return
+
+        # Load dataset
+        dataset = dataObj(self.root, train=True, transform=None, download=True)
+
+        num_data = len(dataset)
+        # Split into validation and training data
+        self.train_dataset, self.valid_dataset = random_split(
+            dataset, [num_data - self.val_size, self.val_size]
         )
-        # for some reason, targets for CIFAR is not an array but a list...
-        self.train_ds.dataset.targets = np.asarray(self.train_ds.dataset.targets)
+
+        self.test_dataset = dataObj(
+            self.root, train=False, transform=self.val_transform, download=True
+        )
 
     def get_client_dl(self, dataidxs, attacks=None):
-        client_ds = Custom_Dataset(self.train_ds, dataidxs, self.transform)
+        client_ds = Custom_Dataset(
+            self.train_dataset, dataidxs, self.train_transform, self.is_mnist
+        )
 
         # Perform attacks before making dataloaders. Data cannot be altered afterwards
         if len(attacks) > 0:
@@ -76,166 +91,39 @@ class CIFAR_Manager:
         return client_dl
 
     def get_training_labels(self):
-        return self.train_ds.dataset.targets[self.train_ds.indices]
-
-    def get_validation_dl(self):
-        val__ds = Custom_Dataset(
-            self.valid_ds, self.valid_ds.indices, self.val_transform
-        )
-        val_dl = DataLoader(val__ds, batch_size=self.train_bs)
-        return val_dl
-
-    def get_test_dl(self):
-        train = False
-        if "cifar100" in self.root:
-            cifar_test = CIFAR100(
-                self.root,
-                train,
-                self.transform,
-                self.val_transform,
-                download=True,
-            )
+        if self.is_mnist:
+            return self.train_dataset.dataset.targets[self.train_dataset.indices]
         else:
-            cifar_test = CIFAR10(  # Maybe this can offer a validation set
-                self.root,
-                train,
-                self.transform,
-                self.val_transform,
-                download=True,
-            )
-
-        test_dl = DataLoader(cifar_test, batch_size=self.test_bs)
-
-        return test_dl
-
-
-class MNIST_Manager:
-    def __init__(
-        self,
-        root,
-        dataidxs=None,
-        transform=None,
-        val_transform=None,
-        val_size=None,
-        train_bs=None,
-        test_bs=None,
-    ):
-        self.root = root
-        self.dataidxs = dataidxs
-        self.transform = transform
-        self.val_transform = val_transform
-        self.val_size = val_size
-        self.train_bs = train_bs
-        self.test_bs = test_bs
-
-        train = True
-        mnist_train = MNIST(self.root, train, self.transform, download=True)
-        num_data = len(mnist_train)
-        self.train_ds, self.valid_ds = random_split(
-            mnist_train, [num_data - self.val_size, self.val_size]
-        )
-
-    def get_client_dl(self, dataidxs, attacks=None):
-        client_ds = Custom_Dataset(self.train_ds, dataidxs, self.transform)
-
-        # Perform attacks before making dataloaders. Data cannot be altered afterwards
-        if len(attacks) > 0:
-            for attack in attacks:
-                f_attack = attack[0]  # first element is the callable
-                if len(attack) > 1:  # second element is the optional arguments
-                    args = attack[1]
-                    client_ds = f_attack(args, client_ds)
-                else:
-                    client_ds = f_attack(client_ds)
-
-        client_dl = DataLoader(client_ds, batch_size=self.train_bs)
-        return client_dl
-
-    def get_training_labels(self):
-        return self.train_ds.dataset.targets[self.train_ds.indices]
+            return np.array(self.train_dataset.dataset.targets)[
+                self.train_dataset.indices
+            ]
 
     def get_validation_dl(self):
-        val__ds = Custom_Dataset(
-            self.valid_ds, self.valid_ds.indices, self.val_transform
+        val_ds = Custom_Dataset(
+            self.valid_dataset,
+            self.valid_dataset.indices,
+            self.val_transform,
+            self.is_mnist,
         )
-        val_dl = DataLoader(val__ds, batch_size=self.train_bs)
+        val_dl = DataLoader(val_ds, batch_size=self.train_bs)
         return val_dl
 
     def get_test_dl(self):
-        train = False
-        fmnist_test = MNIST(self.root, train, self.val_transform, download=True)
-        test_dl = DataLoader(fmnist_test, batch_size=self.test_bs)
-
-        return test_dl
-
-
-class FMNIST_Manager:
-    def __init__(
-        self,
-        root,
-        dataidxs=None,
-        transform=None,
-        val_transform=None,
-        val_size=None,
-        train_bs=None,
-        test_bs=None,
-    ):
-
-        self.root = root
-        self.dataidxs = dataidxs
-        self.transform = transform
-        self.val_transform = val_transform
-        self.val_size = val_size
-        self.train_bs = train_bs
-        self.test_bs = test_bs
-
-        train = True
-        fmnist_train = FashionMNIST(
-            self.root, train, self.transform, self.val_transform, download=True
-        )
-        num_data = len(fmnist_train)
-        self.train_ds, self.valid_ds = random_split(
-            fmnist_train, [num_data - self.val_size, self.val_size]
-        )
-
-    def get_client_dl(self, dataidxs, attacks=None):
-        client_ds = Custom_Dataset(self.train_ds, dataidxs, self.transform)
-
-        # Perform attacks before making dataloaders. Data cannot be altered afterwards
-        if len(attacks) > 0:
-            for attack in attacks:
-                f_attack = attack[0]  # first element is the callable
-                if len(attack) > 1:  # second element is the optional arguments
-                    args = attack[1]
-                    client_ds = f_attack(args, client_ds)
-                else:
-                    client_ds = f_attack(client_ds)
-
-        client_dl = DataLoader(client_ds, batch_size=self.train_bs)
-        return client_dl
-
-    def get_training_labels(self):
-        return self.train_ds.dataset.targets[self.train_ds.indices]
-
-    def get_validation_dl(self):
-        val__ds = Custom_Dataset(
-            self.valid_ds, self.valid_ds.indices, self.val_transform
-        )
-        val_dl = DataLoader(val__ds, batch_size=self.train_bs)
-        return val_dl
-
-    def get_test_dl(self):
-        train = False
-        fmnist_test = FashionMNIST(self.root, train, self.val_transform, download=True)
-        test_dl = DataLoader(fmnist_test, batch_size=self.test_bs)
-
+        test_dl = DataLoader(self.test_dataset, batch_size=self.test_bs)
         return test_dl
 
 
 class Custom_Dataset(Dataset):
-    def __init__(self, ds, dataidxs, transform):
-        self.data = ds.dataset.data[dataidxs]
-        self.target = ds.dataset.targets[dataidxs]
+    def __init__(self, dataset, dataidxs, transform=None, is_mnist=False):
+
+        self.data = dataset.dataset.data[dataidxs]
+        self.transform = transform
+        self.is_mnist = is_mnist
+        if self.is_mnist:
+            self.target = dataset.dataset.targets[dataidxs]
+        else:
+            self.target = np.array(dataset.dataset.targets)[dataidxs]
+
         self.transform = transform
 
     def __getitem__(self, index):
@@ -246,10 +134,12 @@ class Custom_Dataset(Dataset):
             tuple: (image, target) where target is index of the target class.
         """
         img, target = self.data[index], self.target[index]
-
-        # to be consistent with CIFAR to return a PIL Image
-        if isinstance(img, np.ndarray) is False:
+        # doing this so that it is consistent with all other datasets
+        # to return a PIL Image
+        if self.is_mnist:
             img = Image.fromarray(img.numpy(), mode="L")
+        else:
+            img = Image.fromarray(img)
 
         if self.transform is not None:
             img = self.transform(img)

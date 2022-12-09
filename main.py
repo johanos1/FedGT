@@ -70,19 +70,19 @@ if __name__ == "__main__":
     )
     args.partition_method = "homo"  # homo, hetero
     args.partition_alpha = 0.1  # in (0,1]
-    args.client_number = 14
+    args.client_number = 15
     args.batch_size = 32
     args.lr = 0.01
     args.wd = 0.0001
     args.epochs = 1
-    args.comm_round = 1
-    args.pretrained = True
+    args.comm_round = 2
+    args.pretrained = False
     args.client_sample = 1.0
     args.thread_number = 1
     args.val_size = 3000
 
     # Create attacks
-    malicious_clients = []
+    malicious_clients = [0]
     attacks = list_of_lists = [[] for i in range(args.client_number)]
     for client in range(args.client_number):
         if client in malicious_clients:
