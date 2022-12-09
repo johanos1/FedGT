@@ -15,7 +15,7 @@ def flip_label(label_flips: List[Tuple[int, int]], ds: data.Dataset) -> data.Dat
         data.Dataset: posioned dataset
     """
 
-    target_array = ds.target.cpu().detach().numpy()
+    target_array = np.array(ds.target)
     for (old_label, new_label) in label_flips:
         target_array[target_array == old_label] = new_label
     ds.target = torch.from_numpy(target_array)
@@ -36,10 +36,13 @@ def random_labels(ds: data.Dataset) -> data.Dataset:
     ds.target = torch.from_numpy(np.random.randint(num_classes, size=(n_labels,)))
     return ds
 
+
 def permute_labels(ds: data.Dataset) -> data.Dataset:
     """permute the labels in dataset
+
     Args:
         ds (data.Dataset): dataset to poison
+
     Returns:
         data.Dataset: posioned dataset
     """

@@ -62,32 +62,34 @@ if __name__ == "__main__":
     args = DotMap()
     args.method = "fedavg"  # fedavg, fedsgd
     args.data_dir = (
-        "data/mnist"  # data/cifar100, data/cifar10, data/mnist, data/fashionmnist
+        "data/cifar10"  # data/cifar100, data/cifar10, data/mnist, data/fashionmnist
     )
     args.partition_method = "homo"  # homo, hetero
     args.partition_alpha = 0.1  # in (0,1]
     args.client_number = 15
-    args.batch_size = 64
+
+    args.batch_size = 32
     args.lr = 0.01
     args.wd = 0.0001
-    args.epochs = 2
-    args.comm_round = 1
+    args.epochs = 1
+    args.comm_round = 2
+
     args.pretrained = False
     args.client_sample = 1.0
     args.thread_number = 5
     args.val_size = 3000
 
     # Create attacks
-    # malicious_clients = [0, 1, 2, 4, 5]
     mali_number = 5
     malicious_clients = np.random.permutation(args.client_number)
     malicious_clients = malicious_clients[:mali_number].tolist()
     defective = np.zeros((1, args.client_number), dtype=np.uint8)
     defective[:, malicious_clients] = 1
+
     attacks = list_of_lists = [[] for i in range(args.client_number)]
     for client in range(args.client_number):
         if client in malicious_clients:
-            label_flips = [(0, 1)]
+            label_flips = [(0, 1), (2, 3), (3, 4)]
             attacks[client].append((flip_label, label_flips))
             # attacks[client].append((random_labels,))
 

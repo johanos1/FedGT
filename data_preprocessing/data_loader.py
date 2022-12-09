@@ -8,11 +8,7 @@ import logging
 import numpy as np
 import torchvision.transforms as transforms
 
-from data_preprocessing.datasets import (
-    CIFAR_Manager,
-    FMNIST_Manager,
-    MNIST_Manager,
-)
+from data_preprocessing.datasets import Data_Manager
 
 
 logging.basicConfig()
@@ -42,7 +38,6 @@ def _data_transforms(datadir):
 
         train_transform = transforms.Compose(
             [
-                transforms.ToPILImage(),
                 transforms.RandomCrop(32, padding=4),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
@@ -146,39 +141,16 @@ def partition_data(data_obj, partition, n_nets, alpha):
 
 
 def get_data_object(datadir, val_size, batch_size):
-    train_transform, test_transform = _data_transforms(datadir)
-    if "cifar" in datadir:
-        dl_obj = CIFAR_Manager(
-            datadir,
-            None,
-            train_transform,
-            test_transform,
-            val_size,
-            batch_size,
-            batch_size,
-        )
-
-    elif "fashionmnist" in datadir:
-        dl_obj = FMNIST_Manager(
-            datadir,
-            None,
-            train_transform,
-            test_transform,
-            val_size,
-            batch_size,
-            batch_size,
-        )
-
-    elif "mnist" in datadir:
-        dl_obj = MNIST_Manager(
-            datadir,
-            None,
-            train_transform,
-            test_transform,
-            val_size,
-            batch_size,
-            batch_size,
-        )
+    train_transform, val_test_transform = _data_transforms(datadir)
+    dl_obj = Data_Manager(
+        datadir,
+        None,
+        train_transform,
+        val_test_transform,
+        val_size,
+        batch_size,
+        batch_size,
+    )
 
     return dl_obj
 

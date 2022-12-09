@@ -36,6 +36,7 @@ class Base_Client:
         self.model.load_state_dict(server_state_dict)
 
     def run(self, received_info):
+
         client_results = []
         for client_idx in self.client_map[self.round]:
             self.load_client_state_dict(received_info)
@@ -44,7 +45,9 @@ class Base_Client:
             num_samples = len(self.train_dataloader) * self.args.batch_size
 
             if self.args.method == "fedavg":
+
                 weights = self.train_model()
+
                 # acc = self.test()
                 # acc, class_prec, class_recall, class_f1 = self.test_classlevel()
                 # client_results.append(
@@ -54,6 +57,7 @@ class Base_Client:
                 #        "client_index": self.client_index,
                 #    }
                 # )
+
                 client_results.append(
                     {
                         "weights": copy.deepcopy(weights),
@@ -65,15 +69,11 @@ class Base_Client:
             elif self.args.method == "fedsgd":
                 gradients = self.accumulate_gradients()
                 # acc = self.test()
-                acc, class_prec, class_recall, class_f1 = self.test_classlevel()
+                # acc, class_prec, class_recall, class_f1 = self.test_classlevel()
                 client_results.append(
                     {
                         "gradients": gradients,
                         "num_samples": num_samples,
-                        "acc": acc,
-                        "class_prec": class_prec,
-                        "class_recall": class_recall,
-                        "class_f1": class_f1,
                         "client_index": self.client_index,
                     }
                 )
@@ -382,7 +382,7 @@ class Base_Server:
     def evaluate(self, test_data=False, eval_model=None):
 
         if eval_model is not None:
-            model = self.model
+            model = copy.deepcopy(self.model)
             model.load_state_dict(eval_model)
             model.to(self.device)
             model.eval()
@@ -405,8 +405,11 @@ class Base_Server:
             for batch_idx, (x, target) in enumerate(data_loader):
                 x = x.to(self.device)
                 target = target.to(self.device)
+                if eval_model is None:
+                    pred = self.model(x)
+                else:
+                    pred = model(x)
 
-                pred = self.model(x)
                 # loss = self.criterion(pred, target)
                 _, predicted = torch.max(pred, 1)
                 correct = predicted.eq(target).sum()
@@ -427,13 +430,14 @@ class Base_Server:
         cf_matrix = confusion_matrix(y_true, y_pred)
 
         # Compute TP, FP, NP, TN
-        true_pos = np.zeros(10)
-        true_neg = np.zeros(10)
-        false_pos = np.zeros(10)
-        false_neg = np.zeros(10)
+        num_classes = np.maximum(len(np.unique(y_pred)), len(np.unique(y_true)))
+        true_pos = np.zeros(num_classes)
+        true_neg = np.zeros(num_classes)
+        false_pos = np.zeros(num_classes)
+        false_neg = np.zeros(num_classes)
         # in the heterogeneous setting, there may be labels missing in the dataset
         # so find the number of labels in the local dataset
-        num_classes = np.maximum(len(np.unique(y_pred)), len(np.unique(y_true)))
+        
         for i in range(num_classes):
             true_pos[i] = cf_matrix[i, i].astype(np.float64)
             false_pos[i] = (cf_matrix[:, i].sum() - true_pos[i]).astype(np.float64)

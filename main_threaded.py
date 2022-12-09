@@ -8,12 +8,16 @@ from models.resnet import resnet56, resnet18
 from models.logistic_regression import logistic_regression
 from torch.multiprocessing import set_start_method, Queue
 import logging
+
 import os
 from collections import defaultdict
 import time
+
+import numpy as np
 from math import log
 
 import ctypes
+import matplotlib.pyplot as plt
 
 # Calling C functions with numpy inputs
 from numpy.ctypeslib import ndpointer
@@ -77,24 +81,70 @@ def set_random_seed(seed=1):
 
 if __name__ == "__main__":
 
-    try:
-        set_start_method("spawn")
-    except RuntimeError:
-        pass
-    # get arguments
+
     args = DotMap()
     args.lr = 0.01
     args.wd = 0.0001
-    args.batch_size = 64
-    args.epochs = 1
-    args.comm_round = 5
-    args.pretrained = False
+    args.epochs = 2
+    args.comm_round = 2
+    args.pretrained = True
     args.client_sample = 1.0
     args.thread_number = 5
     args.val_size = 3000
     args.method = "fedavg"  # fedavg, fedsgd
     args.data_dir = (
-        "data/mnist"  # data/cifar100, data/cifar10, data/mnist, data/fashionmnist
+        "data/cifar10"  # data/cifar100, data/cifar10, data/mnist, data/fashionmnist
+    )
+    args.partition_method = "homo"  # homo, hetero
+    args.partition_alpha = 0.1  # in (0,1]
+    args.client_number = 15
+    args.batch_size = 64
+
+    # parameters related to the malicious users
+    remove_detected_malicious_clients = False
+    mali_number = 5
+
+    results = np.zeros(4, 8)
+
+    try:
+        set_start_method("spawn")
+    except RuntimeError:
+        pass
+    set_random_seed()
+
+    # -----------------------------------------
+    #           Create attacks
+    # -----------------------------------------
+    malicious_clients = np.random.permutation(args.client_number)
+    malicious_clients = malicious_clients[:mali_number].tolist()
+    attacks = list_of_lists = [[] for i in range(args.client_number)]
+    for client in range(args.client_number):
+        if client in malicious_clients:
+            label_flips = [(2, 5), (1, 7)]
+            attacks[client].append((flip_label, label_flips))
+            attacks[client].append((random_labels,))
+            attacks[client].append((permute_labels,))
+
+    # -----------------------------------------
+    # Obtain dataset for server and the clients
+    # -----------------------------------------
+    (
+        val_data_num,
+        test_data_num,
+        server_val_dl,
+        server_test_dl,
+        data_local_num_dict,
+        train_data_local_dict,
+        class_num,
+    ) = dl.load_partition_data(
+        args.data_dir,
+        args.partition_method,
+        args.partition_alpha,
+        args.client_number,
+        args.batch_size,
+        attacks,
+        args.val_size,
+
     )
     args.partition_method = "homo"  # homo, hetero
     args.partition_alpha = 0.1  # in (0,1]
@@ -117,23 +167,69 @@ if __name__ == "__main__":
         p_ui8_c,
     ]
 
-    # Model = resnet56 if 'cifar' in args.data_dir else resnet18
+    # -----------------------------------------
+    #         Choose Model and FL protocol
+    # -----------------------------------------
     if "cifar" in args.data_dir:
         Model = resnet18
     elif "mnist" in args.data_dir:
         Model = logistic_regression
 
-    # init method and model type
-    if args.method == "fedavg":
-        Client = fedavg.Client
-        Server = fedavg.Server
+    # Pick FL method
+    Server = fedavg.Server
+    Client = fedavg.Client
 
-    elif args.method == "fedsgd":
-        Client = fedsgd.Client
-        Server = fedsgd.Server
+    # -----------------------------------------
+    #               Setup Server
+    # -----------------------------------------
+    server_dict = {
+        "val_data": server_val_dl,
+        "test_data": server_test_dl,
+        "model_type": Model,
+        "num_classes": class_num,
+    }
 
+    # init server
+    server_dict["save_path"] = "{}/logs/{}__{}_e{}_c{}".format(
+        os.getcwd(),
+        time.strftime("%Y%m%d_%H%M%S"),
+        args.method,
+        args.epochs,
+        args.client_number,
+    )
+    if not os.path.exists(server_dict["save_path"]):
+        os.makedirs(server_dict["save_path"])
+    server = Server(server_dict, args)
+    # get global model to start from
+    server_outputs = server.start()
+
+    # -----------------------------------------
+    #               Setup Clients
+    # -----------------------------------------
+    mapping_dict = allocate_clients_to_threads(args)
+    client_dict = [
+        {
+            "train_data": train_data_local_dict,
+            "device": "cuda:{}".format(i % torch.cuda.device_count())
+            if torch.cuda.is_available()
+            else "cpu",
+            "client_map": mapping_dict[i],
+            "model_type": Model,
+            "num_classes": class_num,
+        }
+        for i in range(args.thread_number)
+    ]
+    # init nodes
+    client_info = Queue()
+    for i in range(args.thread_number):
+        client_info.put((client_dict[i], args))
+
+    # -----------------------------------------
+    #          Setup Group Testing
+    # -----------------------------------------
     # Group testing parameters
     if args.client_number == 15:
+    # fmt: off
         parity_check_matrix = np.array(
             [
                 [1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
@@ -483,6 +579,8 @@ if __name__ == "__main__":
             ],
             dtype=np.uint8,
         )
+       # fmt: on
+
     number_tests = parity_check_matrix.shape[0]
     total_MC_it = 10
     # threshold_vec = np.arange(0, 0.6, 0.25).tolist()
@@ -682,3 +780,4 @@ if __name__ == "__main__":
         average_acc[indeks_group] = average_acc[indeks_group] / total_MC_it
         print(average_acc)
     np.savetxt("foo.csv", average_acc, delimiter=",")
+
