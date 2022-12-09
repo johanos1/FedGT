@@ -47,7 +47,7 @@ def permute_labels(ds: data.Dataset) -> data.Dataset:
         data.Dataset: posioned dataset
     """
     num_classes = len(np.unique(ds.target))
-    target_array = ds.target.cpu().detach().numpy()
+    target_array = np.array(ds.target)
     for label in range(num_classes):
         target_array[target_array == label] = (label + 1) % num_classes
     ds.target = torch.from_numpy(target_array)
