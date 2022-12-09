@@ -10,6 +10,7 @@ import logging
 import os
 from collections import defaultdict
 import time
+from math import log
 
 # from ctypes import * # Marvin: I changed this, maybe it crashes not much
 import ctypes
@@ -37,30 +38,25 @@ def set_random_seed(seed=1):
 
 if __name__ == "__main__":
 
-    # Test calling c file
-    # so_file = "./src/C_code/my_functions.so"
-    # my_functions = ctypes.CDLL(so_file)
-    # print(my_functions.square(10))
-
-    set_random_seed()
+    set_random_seed(int(time.time()))
 
     # # Parameters for calling BCJR C code
-    # lib = ctypes.cdll.LoadLibrary("./src/C_code/BCJR_4_python.so")
-    # fun = lib.BCJR
-    # fun.restype = None
-    # p_ui8_c = ndpointer(ctypes.c_uint8, flags="C_CONTIGUOUS")
-    # p_d_c = ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")
-    # fun.argtypes = [
-    #     p_ui8_c,
-    #     p_d_c,
-    #     p_ui8_c,
-    #     p_d_c,
-    #     ctypes.c_double,
-    #     ctypes.c_int,
-    #     ctypes.c_int,
-    #     p_d_c,
-    #     p_ui8_c,
-    # ]
+    lib = ctypes.cdll.LoadLibrary("./src/C_code/BCJR_4_python.so")
+    fun = lib.BCJR
+    fun.restype = None
+    p_ui8_c = ndpointer(ctypes.c_uint8, flags="C_CONTIGUOUS")
+    p_d_c = ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")
+    fun.argtypes = [
+        p_ui8_c,
+        p_d_c,
+        p_ui8_c,
+        p_d_c,
+        ctypes.c_double,
+        ctypes.c_int,
+        ctypes.c_int,
+        p_d_c,
+        p_ui8_c,
+    ]
 
     # Set parameters
     args = DotMap()
@@ -71,18 +67,25 @@ if __name__ == "__main__":
     args.partition_method = "homo"  # homo, hetero
     args.partition_alpha = 0.1  # in (0,1]
     args.client_number = 15
+
     args.batch_size = 32
     args.lr = 0.01
     args.wd = 0.0001
     args.epochs = 1
     args.comm_round = 2
+
     args.pretrained = False
     args.client_sample = 1.0
-    args.thread_number = 1
+    args.thread_number = 5
     args.val_size = 3000
 
     # Create attacks
-    malicious_clients = [0]
+    mali_number = 5
+    malicious_clients = np.random.permutation(args.client_number)
+    malicious_clients = malicious_clients[:mali_number].tolist()
+    defective = np.zeros((1, args.client_number), dtype=np.uint8)
+    defective[:, malicious_clients] = 1
+
     attacks = list_of_lists = [[] for i in range(args.client_number)]
     for client in range(args.client_number):
         if client in malicious_clients:
@@ -156,12 +159,20 @@ if __name__ == "__main__":
             [0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0],
             [0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0],
             [0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1],
-        ]
+        ],
+        dtype=np.uint8,
     )
     number_tests = parity_check_matrix.shape[0]
-    # assert (
-    #     parity_check_matrix.shape[1] == args.client_number
-    # ), "Problem with size of parity check matrix!"
+    ChannelMatrix = np.array([[0.95, 0.05], [0.05, 0.95]], dtype=np.double)
+    min_acc = 0.71
+    threshold_from_max_acc = 0.98
+    threshold_dec = 0.598
+    LLRO = np.empty((1, args.client_number), dtype=np.double)
+    prevalence = mali_number / args.client_number
+    LLRi = log((1 - prevalence) / prevalence) * np.ones(
+        (1, args.client_number), dtype=np.double
+    )
+    DEC = np.empty((1, args.client_number), dtype=np.uint8)
 
     # ----------------------------------------
     # Prepare Server info
@@ -187,6 +198,7 @@ if __name__ == "__main__":
 
     # ----------------------------------------
     # Run learning loop
+    # syndrome = np.matmul(defective, parity_check_matrix.transpose())
     for r in range(args.comm_round):
         round_start = time.time()
 
@@ -205,7 +217,7 @@ if __name__ == "__main__":
             client_idxs = np.where(parity_check_matrix[i, :] == 1)[0].tolist()
             group = []
             for idx in client_idxs:
-                group.append(client_outputs[idx - 1])
+                group.append(client_outputs[idx])
 
             # aggregation returns a list so pick the (only) item
             model = server.aggregate_models(group, update_server=False)[0]
@@ -213,9 +225,39 @@ if __name__ == "__main__":
             acc[i], class_precision, class_recall, class_f1 = server.evaluate(
                 test_data=False, eval_model=model
             )
+        if r == 0:
+            max_acc = acc.max()
+            if max_acc < min_acc:
+                tests = np.ones((1, number_tests), dtype=np.uint8)
+            else:
+                tests = np.zeros((1, number_tests), dtype=np.uint8)
+                tests[:, acc < threshold_from_max_acc * max_acc] = 1
+            fun(
+                parity_check_matrix,
+                LLRi,
+                tests,
+                ChannelMatrix,
+                threshold_dec,
+                args.client_number,
+                number_tests,
+                LLRO,
+                DEC,
+            )
+            assert np.sum(DEC) != DEC.shape[1], "All are classified as malicious"
+            aggregated_outputs_tested = [
+                client_outputs[kkkk]
+                for kkkk in range(args.client_number)
+                if DEC[:, kkkk] == 0
+            ]
 
         # aggregate
-        server_outputs = server.run(client_outputs)
+        # server_outputs = server.run(client_outputs)
+        server_outputs = server.run(aggregated_outputs_tested)
         round_end = time.time()
         logging.info("Round {} Time: {}s".format(r, round_end - round_start))
         logging.info("-------------------------------------------------------")
+    # In order to save per round accuracy
+    model = server.aggregate_models(aggregated_outputs_tested, update_server=False)[0]
+    overall_acc, _, _, _ = server.evaluate(test_data=True, eval_model=model)
+    print(overall_acc)
+    xing = 32

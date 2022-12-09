@@ -12,7 +12,10 @@ import logging
 import os
 from collections import defaultdict
 import time
+
 import numpy as np
+from math import log
+
 import ctypes
 import matplotlib.pyplot as plt
 
@@ -78,6 +81,7 @@ def set_random_seed(seed=1):
 
 if __name__ == "__main__":
 
+
     args = DotMap()
     args.lr = 0.01
     args.wd = 0.0001
@@ -140,7 +144,28 @@ if __name__ == "__main__":
         args.batch_size,
         attacks,
         args.val_size,
+
     )
+    args.partition_method = "homo"  # homo, hetero
+    args.partition_alpha = 0.1  # in (0,1]
+    args.client_number = 15
+
+    lib = ctypes.cdll.LoadLibrary("./src/C_code/BCJR_4_python.so")
+    fun = lib.BCJR
+    fun.restype = None
+    p_ui8_c = ndpointer(ctypes.c_uint8, flags="C_CONTIGUOUS")
+    p_d_c = ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")
+    fun.argtypes = [
+        p_ui8_c,
+        p_d_c,
+        p_ui8_c,
+        p_d_c,
+        ctypes.c_double,
+        ctypes.c_int,
+        ctypes.c_int,
+        p_d_c,
+        p_ui8_c,
+    ]
 
     # -----------------------------------------
     #         Choose Model and FL protocol
@@ -202,101 +227,557 @@ if __name__ == "__main__":
     # -----------------------------------------
     #          Setup Group Testing
     # -----------------------------------------
+    # Group testing parameters
+    if args.client_number == 15:
     # fmt: off
-    parity_check_matrix = np.array(
-        [
-            [1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
-            [0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
-            [0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0],
-            [0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0],
-            [0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0],
-            [0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0],
-            [0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0],
-            [0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1],
-        ]
-    )
-    # fmt: on
+        parity_check_matrix = np.array(
+            [
+                [1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+                [0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+                [0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+                [0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0],
+                [0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+                [0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0],
+                [0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0],
+                [0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1],
+            ],
+            dtype=np.uint8,
+        )
+    elif args.client_number == 31:
+        parity_check_matrix = np.array(
+            [
+                [
+                    1,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    1,
+                    1,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                ],
+                [
+                    0,
+                    1,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    1,
+                    1,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                ],
+                [
+                    0,
+                    0,
+                    1,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    1,
+                    1,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                ],
+                [
+                    0,
+                    0,
+                    0,
+                    1,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    1,
+                    1,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                ],
+                [
+                    0,
+                    0,
+                    0,
+                    0,
+                    1,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    1,
+                    1,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                ],
+                [
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    1,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    1,
+                    1,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                ],
+                [
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    1,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    1,
+                    1,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    0,
+                ],
+                [
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    1,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    1,
+                    1,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                ],
+                [
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    1,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    1,
+                    1,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                ],
+                [
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    1,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    1,
+                    1,
+                    1,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                    0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    0,
+                    1,
+                ],
+            ],
+            dtype=np.uint8,
+        )
+       # fmt: on
+
     number_tests = parity_check_matrix.shape[0]
+    total_MC_it = 10
+    # threshold_vec = np.arange(0, 0.6, 0.25).tolist()
+    threshold_vec = np.arange(0.75, 0.8, 0.25).tolist()
+    average_acc = np.zeros(len(threshold_vec))
+    for indeks_group, threshold_dec in enumerate(threshold_vec):
+        logging.info("Starting with threshold_dec : {}".format(threshold_dec))
+        for monte_carlo_iterr in range(total_MC_it):
+            set_random_seed(int(time.time()))
+            # set_random_seed()
+            # Create attacks
+            mali_number = 5
+            malicious_clients = np.random.permutation(args.client_number)
+            malicious_clients = malicious_clients[:mali_number].tolist()
+            defective = np.zeros((1, args.client_number), dtype=np.uint8)
+            defective[:, malicious_clients] = 1
+            attacks = list_of_lists = [[] for i in range(args.client_number)]
+            for client in range(args.client_number):
+                if client in malicious_clients:
+                    # label_flips = [(1, 7), (3, 9)]
+                    # label_flips = [(0, 1)]
+                    # attacks[client].append((flip_label, label_flips))
+                    # attacks[client].append((random_labels,))
+                    attacks[client].append((permute_labels,))
 
-    # -----------------------------------------
-    #         Main Loop
-    # -----------------------------------------
-    with Pool(
-        max_workers=args.thread_number,
-        initializer=init_process,
-        initargs=(client_info, Client),
-    ) as pool:
-        for r in range(args.comm_round):
-            logging.info("************** Round: {} ***************".format(r))
-            round_start = time.time()
-            client_outputs = pool.map(run_clients, server_outputs)
-            client_outputs = [c for sublist in client_outputs for c in sublist]
-            client_outputs.sort(key=lambda tup: tup["client_index"])
-            # Test groups of clients on server validation set
-            acc = np.zeros(number_tests)
-            f1 = []
-            prec = []
-            recall = []
-            syndrome = []
-            pca_array = np.zeros(shape=(number_tests, 7850))
-
-            for i in range(number_tests):
-                # np.where gives a tuple where first entry is the list we want
-                client_idxs = np.where(parity_check_matrix[i, :] == 1)[0].tolist()
-                syndrome.append(len(set(client_idxs) & set(malicious_clients)))
-                group = []
-                for idx in client_idxs:
-                    group.append(client_outputs[idx])
-
-                # aggregation returns a list so pick the (only) item
-                model = server.aggregate_models(group, update_server=False)[0]
-                # -----------------------------------------
-                # test with validation data!
-                (
-                    acc[i],
-                    class_precision,
-                    class_recall,
-                    class_f1,
-                ) = server.evaluate(test_data=False, eval_model=model)
-                f1.append(class_f1)
-
-                k = 5
-                idx = np.argpartition(f1[i], k)
-                prec.append(np.mean(class_precision[idx[:k]]))
-                recall.append(np.mean(class_recall[idx[:k]]))
-
-            # -----------------------------------------
-            # test without validation data
-            #     import sklearn.decomposition
-            #     tmp = np.empty(
-            #         shape=[
-            #             0,
-            #         ]
-            #     )
-            #     for key in model:
-            #         tmp = np.concatenate(
-            #             (tmp, model[key].cpu().detach().numpy().flatten())
-            #         )
-            #     pca_array[i, :] = tmp
-
-            # pca = sklearn.decomposition.PCA(n_components=1)
-            # pcas = pca.fit_transform(np.array(pca_array))
-
-            indx = np.argsort(np.array(syndrome))
-            # pcas = pcas[indx, :]
-            results[0, :] = np.array(syndrome)[indx]
-            results[1, :] = acc[indx]
-            results[2, :] = np.array(prec)[indx]
-            results[3, :] = np.array(recall)[indx]
-            logging.info(
-                f"malicious nodes: {mali_number}\nsyndrome: {results[0,:]}\naccuracy: {results[1,:]}\nprecision: {results[2,:]}\nrecall: {results[3,:]} "
+            # Obtain dataset for server and the clients
+            (
+                val_data_num,
+                test_data_num,
+                server_val_dl,
+                server_test_dl,
+                data_local_num_dict,
+                train_data_local_dict,
+                class_num,
+            ) = dl.load_partition_data(
+                args.data_dir,
+                args.partition_method,
+                args.partition_alpha,
+                args.client_number,
+                args.batch_size,
+                attacks,
+                args.val_size,
             )
 
-            # aggregate
-            if remove_detected_malicious_clients:
-                for mal in malicious_clients:
-                    del client_outputs[mal]
-            server_outputs = server.run(client_outputs)
+            mapping_dict = allocate_clients_to_threads(args)
+            # init method and model type
+            if args.method == "fedavg":
+                Server = fedavg.Server
+                Client = fedavg.Client
+                # Model = resnet56 if 'cifar' in args.data_dir else resnet18
+                Model = logistic_regression
+                server_dict = {
+                    "val_data": server_val_dl,
+                    "test_data": server_test_dl,
+                    "model_type": Model,
+                    "num_classes": class_num,
+                }
 
-            round_end = time.time()
-            logging.info("Round {} Time: {}s".format(r, round_end - round_start))
+            # init server
+            server_dict["save_path"] = "{}/logs/{}__{}_e{}_c{}".format(
+                os.getcwd(),
+                time.strftime("%Y%m%d_%H%M%S"),
+                args.method,
+                args.epochs,
+                args.client_number,
+            )
+            if not os.path.exists(server_dict["save_path"]):
+                os.makedirs(server_dict["save_path"])
+            server = Server(server_dict, args)
+            server_outputs = server.start()
+            min_acc = 0.815
+            threshold_from_max_acc = 0.99
+
+            client_dict = [
+                {
+                    "train_data": train_data_local_dict,
+                    "device": "cuda:{}".format(i % torch.cuda.device_count())
+                    if torch.cuda.is_available()
+                    else "cpu",
+                    "client_map": mapping_dict[i],
+                    "model_type": Model,
+                    "num_classes": class_num,
+                }
+                for i in range(args.thread_number)
+            ]
+
+            LLRO = np.empty((1, args.client_number), dtype=np.double)
+            prevalence = mali_number / args.client_number
+            LLRi = log((1 - prevalence) / prevalence) * np.ones(
+                (1, args.client_number), dtype=np.double
+            )
+            ChannelMatrix = np.array([[0.95, 0.05], [0.05, 0.95]], dtype=np.double)
+            DEC = np.empty((1, args.client_number), dtype=np.uint8)
+
+            # init nodes
+            client_info = Queue()
+            for i in range(args.thread_number):
+                client_info.put((client_dict[i], args))
+
+            syndrome = np.matmul(defective, parity_check_matrix.transpose())
+            # each thread will create a client object containing the client information
+            with Pool(
+                max_workers=args.thread_number,
+                initializer=init_process,
+                initargs=(client_info, Client),
+            ) as pool:
+                for r in range(args.comm_round):
+                    all_class_malicious = False
+                    logging.info(
+                        "************** Round: {}, MC-Iteration: {}  ***************".format(
+                            r, monte_carlo_iterr
+                        )
+                    )
+                    round_start = time.time()
+                    client_outputs = pool.map(run_clients, server_outputs)
+                    client_outputs = [c for sublist in client_outputs for c in sublist]
+                    client_outputs.sort(
+                        key=lambda tup: tup["client_index"]
+                    )  # Added this ....
+
+                    # Test groups of clients on server validation set
+                    if r == 0:
+                        acc = np.zeros(number_tests)
+                        f1 = []
+                        for i in range(number_tests):
+                            # np.where gives a tuple where first entry is the list we want
+                            client_idxs = np.where(parity_check_matrix[i, :] == 1)[
+                                0
+                            ].tolist()
+                            group = []
+                            for idx in client_idxs:
+                                group.append(client_outputs[idx])
+
+                            # aggregation returns a list so pick the (only) item
+                            model = server.aggregate_models(group, update_server=False)[
+                                0
+                            ]
+                            # note, aside from accuracy, we have access to precision, recall, and f1 score for each class
+                            (
+                                acc[i],
+                                class_precision,
+                                class_recall,
+                                class_f1,
+                            ) = server.evaluate(test_data=False, eval_model=model)
+
+                        max_acc = acc.max()
+                        if max_acc < min_acc:
+                            tests = np.ones((1, number_tests), dtype=np.uint8)
+                        else:
+                            tests = np.zeros((1, number_tests), dtype=np.uint8)
+                            tests[:, acc < threshold_from_max_acc * max_acc] = 1
+                        fun(
+                            parity_check_matrix,
+                            LLRi,
+                            tests,
+                            ChannelMatrix,
+                            threshold_dec,
+                            args.client_number,
+                            number_tests,
+                            LLRO,
+                            DEC,
+                        )
+                        if (
+                            np.sum(DEC) == DEC.shape[1]
+                        ):  # , "All are classified as malicious"
+                            all_class_malicious = True
+                            break
+                        # else:
+                        #    aggregated_outputs_tested = [
+                        #        client_outputs[kkkk]
+                        #        for kkkk in range(args.client_number)
+                        #        if DEC[:, kkkk] == 0
+                        #    ]
+
+                    # aggregate
+                    # server_outputs = server.run(client_outputs)
+                    aggregated_outputs_tested = [
+                        client_outputs[kkkk]
+                        for kkkk in range(args.client_number)
+                        if DEC[:, kkkk] == 0
+                    ]
+                    server_outputs = server.run(aggregated_outputs_tested)
+                    round_end = time.time()
+                    logging.info(
+                        "Round {} Time: {}s".format(r, round_end - round_start)
+                    )
+                if all_class_malicious == False:
+                    model = server.aggregate_models(
+                        aggregated_outputs_tested, update_server=False
+                    )[0]
+                    overall_acc, _, _, _ = server.evaluate(
+                        test_data=True, eval_model=model
+                    )
+                else:
+                    overall_acc = 1 / class_num
+            average_acc[indeks_group] = average_acc[indeks_group] + overall_acc
+        average_acc[indeks_group] = average_acc[indeks_group] / total_MC_it
+        print(average_acc)
+    np.savetxt("foo.csv", average_acc, delimiter=",")
+

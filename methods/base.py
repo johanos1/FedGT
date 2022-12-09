@@ -47,6 +47,17 @@ class Base_Client:
             if self.args.method == "fedavg":
 
                 weights = self.train_model()
+
+                # acc = self.test()
+                # acc, class_prec, class_recall, class_f1 = self.test_classlevel()
+                # client_results.append(
+                #    {
+                #        "weights": weights,
+                #        "num_samples": num_samples,
+                #        "client_index": self.client_index,
+                #    }
+                # )
+
                 client_results.append(
                     {
                         "weights": copy.deepcopy(weights),
@@ -411,9 +422,9 @@ class Base_Server:
                 test_sample_number += target.size(0)
             acc = test_correct / test_sample_number
 
-            if test_data is True:
+            if test_data is True and eval_model is None:
                 logging.info(
-                    "************* Server Acc = {:.2f} **************".format(acc)
+                    "************* Server Acc = {:.4f} **************".format(acc)
                 )
 
         cf_matrix = confusion_matrix(y_true, y_pred)
