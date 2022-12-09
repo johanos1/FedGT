@@ -109,10 +109,6 @@ if __name__ == "__main__":
         pass
     set_random_seed()
 
-    args.partition_method = "homo"  # homo, hetero
-    args.partition_alpha = 0.1  # in (0,1]
-    args.client_number = 15
-
     lib = ctypes.cdll.LoadLibrary("./src/C_code/BCJR_4_python.so")
     fun = lib.BCJR
     fun.restype = None
