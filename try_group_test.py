@@ -22,16 +22,30 @@ r = 3
 N = 6
 
 # Inputs
+# H = np.array(
+#    [[1, 1, 0, 1, 0, 0], [0, 1, 1, 0, 1, 0], [1, 0, 1, 0, 0, 1]], dtype=np.uint8
+# )
 H = np.array(
-    [[1, 1, 0, 1, 0, 0], [0, 1, 1, 0, 1, 0], [1, 0, 1, 0, 0, 1]], dtype=np.uint8
+    [
+        [1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+        [0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+        [0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0],
+        [0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+        [0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0],
+        [0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0],
+        [0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1],
+    ],
+    dtype=np.uint8,
 )
-LLRi = 1.19 * np.ones((1, N), dtype=np.double)
-test_vec = np.array([[0, 0, 1]], dtype=np.uint8)
-ChannelMatrix = np.array([[0.85, 0.15], [0.1, 0.9]], dtype=np.double)
-threshold_dec = 0.598
+no_tests = H.shape[0]
+LLRi = 0.69 * np.ones((1, N), dtype=np.double)
+test_vec = np.ones((1, no_tests), dtype=np.uint8)
+ChannelMatrix = np.array([[0.99, 0.01], [0.01, 0.99]], dtype=np.double)
+threshold_dec = 1.2
 LLRO = np.empty((1, N), dtype=np.double)
 DEC = np.empty((1, N), dtype=np.uint8)
 # Call of the function
 fun(H, LLRi, test_vec, ChannelMatrix, threshold_dec, N, r, LLRO, DEC)
-# print(LLRO)
-# print(DEC)
+print(LLRO)
+print(DEC)
