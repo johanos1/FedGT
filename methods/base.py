@@ -96,15 +96,15 @@ class Base_Client:
                 loss = self.criterion(log_probs, labels)
                 loss.backward()  # accumulate gradients
                 batch_loss.append(loss.item())
-            if len(batch_loss) > 0:
-                epoch_loss.append(sum(batch_loss) / len(batch_loss))
-                logging.info(
-                    "(client {}. Local Training Epoch: {} \tLoss: {:.6f}".format(
-                        self.client_index,
-                        epoch,
-                        sum(epoch_loss) / len(epoch_loss),
-                    )
-                )
+           # if len(batch_loss) > 0:
+           #     epoch_loss.append(sum(batch_loss) / len(batch_loss))
+           #     logging.info(
+           ##         "(client {}. Local Training Epoch: {} \tLoss: {:.6f}".format(
+            #            self.client_index,
+            #            epoch,
+            #            sum(epoch_loss) / len(epoch_loss),
+            #        )
+            #    )
 
         grads = {}
         for name, param in self.model.named_parameters():
@@ -128,7 +128,7 @@ class Base_Client:
                 loss.backward()
                 self.optimizer.step()
                 batch_loss.append(loss.item())
-            if len(batch_loss) > 0:
+            if len(batch_loss) > 100000000:
                 epoch_loss.append(sum(batch_loss) / len(batch_loss))
                 logging.info(
                     "(client {}. Local Training Epoch: {} \tLoss: {:.6f}".format(
@@ -288,7 +288,7 @@ class Base_Server:
             self.acc = acc
 
         # return global model
-        return server_outputs
+        return server_outputs, acc
 
     def start(self):
         with open("{}/config.txt".format(self.save_path), "a+") as config:
