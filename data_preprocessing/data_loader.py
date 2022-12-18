@@ -16,15 +16,24 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
-def record_net_data_stats(y_train, net_dataidx_map):
-    net_cls_counts = {}
+def record_net_data_stats(server_val_dl, server_test_dl, client_dict_dl):
 
-    for net_i, dataidx in net_dataidx_map.items():
-        unq, unq_cnt = np.unique(y_train[dataidx], return_counts=True)
+    val_unique, val_counts = np.unique(
+        np.array(server_val_dl.dataset.target), return_counts=True
+    )
+    tmp = {val_unique[i]: val_counts[i] for i in range(len(val_unique))}
+    logging.info(f"\nServer validation set: {str(tmp)}")
+
+    test_unique, test_counts = np.unique(
+        np.array(server_test_dl.dataset.targets), return_counts=True
+    )
+    tmp = {test_unique[i]: test_counts[i] for i in range(len(test_unique))}
+    logging.info(f"Server test set: {str(tmp)}\n")
+
+    for (i, dl) in client_dict_dl.items():
+        unq, unq_cnt = np.unique(dl.dataset.target, return_counts=True)
         tmp = {unq[i]: unq_cnt[i] for i in range(len(unq))}
-        net_cls_counts[net_i] = tmp
-    logging.debug("Data statistics: %s" % str(net_cls_counts))
-    return net_cls_counts
+        logging.info(f"Client {i} statistics: {tmp}")
 
 
 def _data_transforms(datadir):
@@ -135,9 +144,7 @@ def partition_data(data_obj, partition, n_nets, alpha):
             np.random.shuffle(idx_batch[j])
             net_dataidx_map[j] = idx_batch[j]
 
-    traindata_cls_counts = record_net_data_stats(y_train, net_dataidx_map)
-
-    return class_num, net_dataidx_map, traindata_cls_counts
+    return class_num, net_dataidx_map
 
 
 def get_data_object(datadir, val_size, batch_size):
@@ -175,12 +182,9 @@ def load_partition_data(
     test_data_num = len(server_test_dl.dataset)
 
     # Start looking at data for clients
-    class_num, net_dataidx_map, traindata_cls_counts = partition_data(
+    class_num, net_dataidx_map = partition_data(
         data_obj, partition_method, client_number, partition_alpha
     )
-
-    logging.info("traindata_cls_counts = " + str(traindata_cls_counts))
-    train_data_num = sum([len(net_dataidx_map[r]) for r in range(client_number)])
 
     # get local dataset
     client_data_num = dict()
@@ -198,6 +202,8 @@ def load_partition_data(
             "client_idx = %d, local_sample_number = %d, batch_num = %d"
             % (client_idx, local_data_num, len(client_dl))
         )
+
+    record_net_data_stats(server_val_dl, server_test_dl, client_dl_dict)
 
     return (
         val_data_num,

@@ -6,7 +6,7 @@ https://github.com/pytorch/vision/blob/main/torchvision/models/resnet.py
 
 import torch
 import torch.nn as nn
-
+from torchvision.models import ResNet18_Weights
 
 def conv3x3(in_planes, out_planes, stride=1, groups=1, dilation=1):
     """3x3 convolution with padding"""
