@@ -74,7 +74,11 @@ class Data_Manager:
 
     def get_client_dl(self, dataidxs, attacks=None):
         client_ds = Custom_Dataset(
-            self.train_dataset, dataidxs, self.train_transform, self.is_mnist
+            self.train_dataset,
+            self.train_dataset.indices,
+            dataidxs,
+            self.train_transform,
+            self.is_mnist,
         )
 
         # Perform attacks before making dataloaders. Data cannot be altered afterwards
@@ -102,6 +106,7 @@ class Data_Manager:
         val_ds = Custom_Dataset(
             self.valid_dataset,
             self.valid_dataset.indices,
+            range(len(self.valid_dataset)),
             self.val_transform,
             self.is_mnist,
         )
@@ -114,15 +119,18 @@ class Data_Manager:
 
 
 class Custom_Dataset(Dataset):
-    def __init__(self, dataset, dataidxs, transform=None, is_mnist=False):
-
-        self.data = dataset.dataset.data[dataidxs]
+    def __init__(
+        self, dataset, train_val_data_idx, dataidxs, transform=None, is_mnist=False
+    ):
+        self.data = dataset.dataset.data[train_val_data_idx][dataidxs]
         self.transform = transform
         self.is_mnist = is_mnist
         if self.is_mnist:
-            self.target = dataset.dataset.targets[dataidxs]
+            self.target = dataset.dataset.targets[train_val_data_idx][dataidxs]
         else:
-            self.target = np.array(dataset.dataset.targets)[dataidxs]
+            self.target = np.array(dataset.dataset.targets)[train_val_data_idx][
+                dataidxs
+            ]
 
         self.transform = transform
 

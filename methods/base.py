@@ -96,15 +96,15 @@ class Base_Client:
                 loss = self.criterion(log_probs, labels)
                 loss.backward()  # accumulate gradients
                 batch_loss.append(loss.item())
-           # if len(batch_loss) > 0:
-           #     epoch_loss.append(sum(batch_loss) / len(batch_loss))
-           #     logging.info(
-           ##         "(client {}. Local Training Epoch: {} \tLoss: {:.6f}".format(
-            #            self.client_index,
-            #            epoch,
-            #            sum(epoch_loss) / len(epoch_loss),
-            #        )
-            #    )
+        # if len(batch_loss) > 0:
+        #     epoch_loss.append(sum(batch_loss) / len(batch_loss))
+        #     logging.info(
+        ##         "(client {}. Local Training Epoch: {} \tLoss: {:.6f}".format(
+        #            self.client_index,
+        #            epoch,
+        #            sum(epoch_loss) / len(epoch_loss),
+        #        )
+        #    )
 
         grads = {}
         for name, param in self.model.named_parameters():
@@ -437,7 +437,7 @@ class Base_Server:
         false_neg = np.zeros(num_classes)
         # in the heterogeneous setting, there may be labels missing in the dataset
         # so find the number of labels in the local dataset
-        
+
         for i in range(num_classes):
             true_pos[i] = cf_matrix[i, i].astype(np.float64)
             false_pos[i] = (cf_matrix[:, i].sum() - true_pos[i]).astype(np.float64)
