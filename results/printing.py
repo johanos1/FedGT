@@ -26,7 +26,7 @@ else:
     my_data = np.hstack((my_data, my_data3))
     print(my_data.shape)
     """
-filename = "20221212_233658"
+filename = "20221216_232048"
 my_data = np.genfromtxt("results/" + filename + "/accs.csv", delimiter=",")
 threshold_vec = np.genfromtxt("results/" + filename + "/lambdas.csv", delimiter=",")
 P_FA = np.genfromtxt("results/" + filename + "/P_FA.csv", delimiter=",")
@@ -79,9 +79,10 @@ axarr[1].plot(threshold_vec, no_defense_acc_md, label="No_defense")
 axarr[1].set(xlabel="Gianluigi $Lambda$")
 axarr[1].set(ylabel=ylabelmd)
 axarr[1].legend()
-axarr[2].plot(P_FA, 1 - P_MD, label="ROC curve")
+axarr[2].plot(threshold_vec, P_FA, label="ROC curve")
 axarr[2].set(xlabel="P_FA$")
 axarr[2].set(ylabel="1 - P_MD")
 axarr[2].legend()
 # axarr[1].ylabel(ylabelmd)
 plt.show()
+q = 111
