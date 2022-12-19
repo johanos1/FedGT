@@ -6,7 +6,7 @@ from itertools import product
 
 fig, ax = plt.subplots(nrows=2, ncols=2, figsize=(18, 5))
 
-data = ["mnist", "cifar"]
+data = ["mnist"]  # , "cifar10"]
 alpha_list = [np.inf]
 epochs_list = [1]
 n_malicious_list = [5]
@@ -19,12 +19,7 @@ sim_params = list(
 for k, (d, a, e, m, bs) in enumerate(sim_params):
 
     # load file
-    if d == "mnist":
-        prefix = "./results/MNIST_"
-        plot_prefix = "MNIST"
-    elif d == "cifar":
-        prefix = "./results/CIFAR10_"
-        plot_prefix = "CIFAR10"
+    prefix = f"./results/{d.upper()}_"
     suffix = f"m-{m}_e-{e}_bs-{bs}_alpha-{a}.txt"
     sim_title = prefix + suffix
 
@@ -44,6 +39,7 @@ for k, (d, a, e, m, bs) in enumerate(sim_params):
     n_clients = data["client_number"]
     comm_rounds = data["comm_round"]
 
+    plot_prefix = f"{d.upper()} with {MC_iter} MC iterations"
     fig.suptitle(plot_prefix)
     # FIG 1:
     # average accuracy over communication rounds
@@ -52,7 +48,7 @@ for k, (d, a, e, m, bs) in enumerate(sim_params):
     str_legend = []
     for i, threshold in enumerate(threshold_vec):
         ax[0, 0].plot(range(comm_rounds), average_acc[i, :])
-        str_legend.append(str(threshold))
+        str_legend.append(str("{0:.2f}".format(threshold)))
     ax[0, 0].set_title("Average accuracy")
     ax[0, 0].set_xlabel("Commuication rounds")
     ax[0, 0].set_ylabel("Accuracy")
@@ -72,6 +68,7 @@ for k, (d, a, e, m, bs) in enumerate(sim_params):
     # FIG 3:
     # average accuracy wrt threshold after comm rounds
     final_acc = average_acc[:, -1]
+    ax[1, 0].plot(threshold_vec, final_acc)
     ax[1, 0].set_title(f"Average accuracy @ {comm_rounds} rounds")
     ax[1, 0].set_xlabel("GL Threshold")
     ax[1, 0].set_ylabel("Accuracy")
@@ -80,7 +77,8 @@ for k, (d, a, e, m, bs) in enumerate(sim_params):
 
     # FIG 4:
     # median accuracy
-    median_acc = np.median(acc, axis=1)[-1]
+    median_acc = np.median(acc, axis=1)[:, -1]
+    ax[1, 1].plot(threshold_vec, median_acc)
     ax[1, 1].set_title(f"Median accuracy @ {comm_rounds} rounds")
     ax[1, 1].set_xlabel("GL Threshold")
     ax[1, 1].set_ylabel("Accuracy")

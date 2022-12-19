@@ -138,6 +138,9 @@ if __name__ == "__main__":
         sim_result["total_MC_it"] = total_MC_it
         sim_result["threshold_vec"] = threshold_vec
         sim_result["group_acc"] = np.zeros((len(threshold_vec), total_MC_it, 8))
+        sim_result["malicious_clients"] = np.zeros(
+            (len(threshold_vec), total_MC_it, n_malicious)
+        )
         sim_result["DEC"] = np.zeros(
             (len(threshold_vec), total_MC_it, args.client_number)
         )
@@ -183,6 +186,9 @@ if __name__ == "__main__":
                         # attacks[client].append((random_labels,))
                         attacks[client].append((permute_labels,))
 
+                sim_result["malicious_clients"][
+                    thres_indx, monte_carlo_iterr, :
+                ] = defective
                 # -----------------------------------------
                 # Obtain dataset for server and the clients
                 # -----------------------------------------
@@ -355,6 +361,7 @@ if __name__ == "__main__":
         sim_result["group_acc"] = sim_result["group_acc"].tolist()
         sim_result["DEC"] = sim_result["DEC"].tolist()
         sim_result["syndrome"] = sim_result["syndrome"].tolist()
+        sim_result["malicious_clients"] = sim_result["malicious_clients"].tolist()
 
         if "mnist" in args.data_dir:
             prefix = "./results/MNIST_"
