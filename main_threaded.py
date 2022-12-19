@@ -128,7 +128,6 @@ if __name__ == "__main__":
         # No need to loop over thresholds if we dont do group testing
         if MODE != 2:
             threshold_vec = [np.inf]
-            total_MC_it = 1
 
         # prepare to store results
         sim_result["epochs"] = epochs

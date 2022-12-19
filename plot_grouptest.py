@@ -22,10 +22,10 @@ for k, (d, a, e, m, bs) in enumerate(sim_params):
 
     # load file
     prefix = f"./results/{d.upper()}_"
-    suffix = f"m-{m}_e-{e}_bs-{bs}_alpha-{a}"
-    suffix_0 = suffix + f"_totalMC-{1}_MODE-0.txt"
-    suffix_1 = suffix + f"_totalMC-{1}_MODE-1.txt"
-    suffix_2 = suffix + f"_totalMC-{MC_iter}_MODE-2.txt"
+    suffix = f"m-{m}_e-{e}_bs-{bs}_alpha-{a}_totalMC-{MC_iter}"
+    suffix_0 = suffix + f"_MODE-0.txt"
+    suffix_1 = suffix + f"_MODE-1.txt"
+    suffix_2 = suffix + f"_MODE-2.txt"
 
     try:
         data_no_defence = json.load(open(prefix + suffix_0))  # no defence
