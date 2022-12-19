@@ -83,7 +83,7 @@ def set_random_seed(seed=1):
 if __name__ == "__main__":
 
     args = DotMap()
-    args.comm_round = 5
+    args.comm_round = 1
     args.pretrained = False
     args.client_sample = 1.0
     args.thread_number = 5
@@ -104,8 +104,9 @@ if __name__ == "__main__":
         args.momentum = 0
         args.wd = 0
 
-    total_MC_it = 10
-    threshold_vec = np.arange(0.1, 0.8, 0.2).tolist()
+    MODE = 2  # 0: no defence (keep the malicous nodes), 1: oracle (remove all malicious nodes), 2: group testing
+    total_MC_it = 2
+    threshold_vec = np.arange(0.1, 0.8, 0.4).tolist()
     sim_result = {}
 
     # Set hyper parameters to sweep
@@ -139,7 +140,7 @@ if __name__ == "__main__":
         sim_result["threshold_vec"] = threshold_vec
         sim_result["group_acc"] = np.zeros((len(threshold_vec), total_MC_it, 8))
         sim_result["malicious_clients"] = np.zeros(
-            (len(threshold_vec), total_MC_it, n_malicious)
+            (len(threshold_vec), total_MC_it, args.client_number)
         )
         sim_result["DEC"] = np.zeros(
             (len(threshold_vec), total_MC_it, args.client_number)

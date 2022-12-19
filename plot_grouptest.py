@@ -7,6 +7,7 @@ from itertools import product
 fig, ax = plt.subplots(nrows=2, ncols=2, figsize=(18, 5))
 
 data = ["mnist"]  # , "cifar10"]
+MC_iter = 2
 alpha_list = [np.inf]
 epochs_list = [1]
 n_malicious_list = [5]
@@ -20,7 +21,7 @@ for k, (d, a, e, m, bs) in enumerate(sim_params):
 
     # load file
     prefix = f"./results/{d.upper()}_"
-    suffix = f"m-{m}_e-{e}_bs-{bs}_alpha-{a}.txt"
+    suffix = f"m-{m}_e-{e}_bs-{bs}_alpha-{a}-totalMC-{MC_iter}.txt"
     sim_title = prefix + suffix
 
     f = open(sim_title)
@@ -35,7 +36,6 @@ for k, (d, a, e, m, bs) in enumerate(sim_params):
     P_MD = np.array(data["P_MD"])
     P_FA = np.array(data["P_FA"])
     threshold_vec = np.array(data["threshold_vec"])
-    MC_iter = data["total_MC_it"]
     n_clients = data["client_number"]
     comm_rounds = data["comm_round"]
 
