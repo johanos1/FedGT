@@ -45,13 +45,15 @@ for k, (d, a, e, m, bs) in enumerate(sim_params):
     group_acc = np.array(data["group_acc"])
     acc = np.array(data["accuracy"])
     syndrome = np.array(data["syndrome"])
-    DEC = np.array(data["DEC"])
+    DEC = np.array(data["DEC"]).astype(bool)
     syndrome = np.array(data["syndrome"])
     P_MD = np.array(data["P_MD"])
     P_FA = np.array(data["P_FA"])
     threshold_vec = np.array(data["threshold_vec"])
     n_clients = data["client_number"]
+    n_malicious = data["n_malicious"]
     comm_rounds = data["comm_round"]
+    malicious_clients = np.array(data["malicious_clients"]).astype(bool)
 
     plot_prefix = f"{d.upper()} with {MC_iter} MC iterations"
     fig.suptitle(plot_prefix)
@@ -86,14 +88,32 @@ for k, (d, a, e, m, bs) in enumerate(sim_params):
     # FIG 3:
     # average accuracy wrt threshold after comm rounds
     final_acc = average_acc[:, -1]
+    # find out how many malign/benign users are included
+    benign_users_included = []
+    malign_users_included = []
+    for i, _ in enumerate(threshold_vec):
+        benign_users = 0
+        malign_users = 0
+        for j in range(MC_iter):
+            benign_indx = np.where(malicious_clients[i, j, :] == False)[0]
+            malicious_indx = np.where(malicious_clients[i, j, :] == True)[0]
+            benign_users += np.sum(DEC[i, j, benign_indx] == False)
+            malign_users += np.sum(DEC[i, j, malicious_indx] == True)
+        avg_benign_included = (benign_users / MC_iter) / (n_clients - n_malicious)
+        avg_malign_included = (malign_users / MC_iter) / (n_malicious)
+        benign_users_included.append(avg_benign_included)
+        malign_users_included.append(avg_malign_included)
+
     ax[1, 0].plot(threshold_vec, final_acc)
     ax[1, 0].plot(threshold_vec, acc_oracle[-1], "--b")
     ax[1, 0].plot(threshold_vec, acc_no_defence[-1], "--r")
+    # ax[1, 0].plot(threshold_vec, benign_users_included)
+    # ax[1, 0].plot(threshold_vec, malign_users_included)
     ax[1, 0].set_title(f"Average accuracy @ {comm_rounds} rounds")
     ax[1, 0].set_xlabel("GL Threshold")
-    ax[1, 0].set_ylabel("Accuracy")
     ax[1, 0].xaxis.grid(True)
     ax[1, 0].yaxis.grid(True)
+    ax[1, 0].legend(["Accuracy", "benign users included", "malignant users included"])
 
     # FIG 4:
     # median accuracy
