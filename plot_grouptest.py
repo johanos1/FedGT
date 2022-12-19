@@ -8,6 +8,7 @@ fig, ax = plt.subplots(nrows=2, ncols=2, figsize=(18, 5))
 
 data = ["mnist"]  # , "cifar10"]
 MC_iter = 2
+MODE = 0
 alpha_list = [np.inf]
 epochs_list = [1]
 n_malicious_list = [5]
@@ -21,11 +22,24 @@ for k, (d, a, e, m, bs) in enumerate(sim_params):
 
     # load file
     prefix = f"./results/{d.upper()}_"
-    suffix = f"m-{m}_e-{e}_bs-{bs}_alpha-{a}-totalMC-{MC_iter}.txt"
-    sim_title = prefix + suffix
+    suffix = f"m-{m}_e-{e}_bs-{bs}_alpha-{a}_totalMC-{MC_iter}.txt"
+    suffix_0 = suffix + "_MODE-0"
+    suffix_1 = suffix + "_MODE-1"
+    suffix_2 = suffix + "_MODE-2"
 
-    f = open(sim_title)
-    data = json.load(f)
+    try:
+        data_no_defence = json.load(open(prefix + suffix_0))  # no defence
+        acc_no_defence = np.array(data_no_defence["accuracy"])
+    except:
+        acc_no_defence = []
+
+    try:
+        data_oracle = json.load(open(prefix + suffix_1))  # oracle
+        acc_oracle = np.array(data["accuracy"])
+    except:
+        acc_oracle = []
+
+    data = json.load(open(prefix + suffix_2))  # group testing
 
     # extract simulation data
     group_acc = np.array(data["group_acc"])
@@ -51,6 +65,10 @@ for k, (d, a, e, m, bs) in enumerate(sim_params):
     for i, threshold in enumerate(threshold_vec):
         ax[0, 0].plot(range(comm_rounds), average_acc[i, :])
         str_legend.append(str("{0:.2f}".format(threshold)))
+    ax[0, 0].plot(range(comm_rounds), acc_oracle)
+    str_legend.append("oracle")
+    ax[0, 0].plot(range(comm_rounds), acc_no_defence)
+    str_legend.append("no defence")
     ax[0, 0].set_title("Average accuracy")
     ax[0, 0].set_xlabel("Commuication rounds")
     ax[0, 0].set_ylabel("Accuracy")
@@ -87,6 +105,8 @@ for k, (d, a, e, m, bs) in enumerate(sim_params):
         malign_users_included.append(avg_malign_included)
 
     ax[1, 0].plot(threshold_vec, final_acc)
+    ax[1, 0].plot(threshold_vec, acc_oracle[-1], "--b")
+    ax[1, 0].plot(threshold_vec, acc_no_defence[-1], "--r")
     # ax[1, 0].plot(threshold_vec, benign_users_included)
     # ax[1, 0].plot(threshold_vec, malign_users_included)
     ax[1, 0].set_title(f"Average accuracy @ {comm_rounds} rounds")
@@ -99,6 +119,8 @@ for k, (d, a, e, m, bs) in enumerate(sim_params):
     # median accuracy
     median_acc = np.median(acc, axis=1)[:, -1]
     ax[1, 1].plot(threshold_vec, median_acc)
+    ax[1, 1].plot(threshold_vec, acc_oracle[-1], "--b")
+    ax[1, 1].plot(threshold_vec, acc_no_defence[-1], "--r")
     ax[1, 1].set_title(f"Median accuracy @ {comm_rounds} rounds")
     ax[1, 1].set_xlabel("GL Threshold")
     ax[1, 1].set_ylabel("Accuracy")

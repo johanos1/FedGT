@@ -83,7 +83,7 @@ def set_random_seed(seed=1):
 if __name__ == "__main__":
 
     args = DotMap()
-    args.comm_round = 1
+    args.comm_round = 2
     args.pretrained = False
     args.client_sample = 1.0
     args.thread_number = 5
@@ -104,8 +104,8 @@ if __name__ == "__main__":
         args.momentum = 0
         args.wd = 0
 
-    MODE = 2  # 0: no defence (keep the malicous nodes), 1: oracle (remove all malicious nodes), 2: group testing
-    total_MC_it = 2
+    MODE = 0  # 0: no defence (keep the malicous nodes), 1: oracle (remove all malicious nodes), 2: group testing
+    total_MC_it = 3
     threshold_vec = np.arange(0.1, 0.8, 0.4).tolist()
     sim_result = {}
 
@@ -124,6 +124,11 @@ if __name__ == "__main__":
     )
 
     for (alpha, epochs, n_malicious, batch_size) in sim_params:
+
+        # No need to loop over thresholds if we dont do group testing
+        if MODE != 2:
+            threshold_vec = [np.inf]
+            total_MC_it = 1
 
         # prepare to store results
         sim_result["epochs"] = epochs
@@ -310,40 +315,52 @@ if __name__ == "__main__":
                         ]
                         client_outputs.sort(key=lambda tup: tup["client_index"])
 
-                        # -----------------------------------------
-                        #           Group Testing
-                        # -----------------------------------------
-                        if r == 0:
-                            group_accuracies = gt.get_group_accuracies(
-                                client_outputs, server
-                            )
-                            DEC = gt.perform_group_test(group_accuracies)
-                            MD = MD + np.sum(gt.DEC[defective == 1] == 0)
-                            FA = FA + np.sum(gt.DEC[defective == 0] == 1)
-                            if (
-                                np.sum(DEC) == DEC.shape[1]
-                            ):  # , "All are classified as malicious"
-                                all_class_malicious = True
-
-                            sim_result["group_acc"][
-                                thres_indx, monte_carlo_iterr, :
-                            ] = group_accuracies
-                            sim_result["DEC"][thres_indx, monte_carlo_iterr, :] = DEC
-                            sim_result["syndrome"][
-                                thres_indx, monte_carlo_iterr
-                            ] = syndrome[0]
-                        # -----------------------------------------
-                        #               Aggregation
-                        # -----------------------------------------
-                        # If all malicious, just use all
-                        if all_class_malicious == True:
+                        if MODE == 0:
                             clients_to_aggregate = client_outputs
-                        else:
-                            clients_to_aggregate = [
-                                client_outputs[client_idx]
-                                for client_idx in range(args.client_number)
-                                if DEC[:, client_idx] == 0
-                            ]
+
+                        elif MODE == 1:
+                            clients_to_aggregate = []
+                            for i in range(args.client_number):
+                                if i not in malicious_clients:
+                                    clients_to_aggregate.append(client_outputs[i])
+
+                        elif MODE == 2:
+                            # -----------------------------------------
+                            #           Group Testing
+                            # -----------------------------------------
+                            if r == 0:
+                                group_accuracies = gt.get_group_accuracies(
+                                    client_outputs, server
+                                )
+                                DEC = gt.perform_group_test(group_accuracies)
+                                MD = MD + np.sum(gt.DEC[defective == 1] == 0)
+                                FA = FA + np.sum(gt.DEC[defective == 0] == 1)
+                                if (
+                                    np.sum(DEC) == DEC.shape[1]
+                                ):  # , "All are classified as malicious"
+                                    all_class_malicious = True
+
+                                sim_result["group_acc"][
+                                    thres_indx, monte_carlo_iterr, :
+                                ] = group_accuracies
+                                sim_result["DEC"][
+                                    thres_indx, monte_carlo_iterr, :
+                                ] = DEC
+                                sim_result["syndrome"][
+                                    thres_indx, monte_carlo_iterr
+                                ] = syndrome[0]
+                            # -----------------------------------------
+                            #               Aggregation
+                            # -----------------------------------------
+                            # If all malicious, just use all
+                            if all_class_malicious == True:
+                                clients_to_aggregate = client_outputs
+                            else:
+                                clients_to_aggregate = [
+                                    client_outputs[client_idx]
+                                    for client_idx in range(args.client_number)
+                                    if DEC[:, client_idx] == 0
+                                ]
                         server_outputs, acc[0, r] = server.run(clients_to_aggregate)
                         round_end = time.time()
                         logging.info(f"Round {r} Time: {round_end - round_start}")
@@ -368,7 +385,7 @@ if __name__ == "__main__":
             prefix = "./results/MNIST_"
         elif "cifar" in args.data_dir:
             prefix = "./results/CIFAR10_"
-        suffix = f"m-{n_malicious}_e-{args.epochs}_bs-{args.batch_size}_alpha-{args.partition_alpha}-totalMC-{total_MC_it}.txt"
+        suffix = f"m-{n_malicious}_e-{args.epochs}_bs-{args.batch_size}_alpha-{args.partition_alpha}_totalMC-{total_MC_it}_MODE-{MODE}.txt"
         sim_title = prefix + suffix
 
         with open(sim_title, "w") as convert_file:
