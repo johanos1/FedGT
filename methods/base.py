@@ -38,9 +38,9 @@ class Base_Client:
     def run(self, received_info):
 
         client_results = []
-        for client_idx in self.client_map[self.round]:
+        for dataset_idx, client_idx in enumerate(self.client_map[self.round]):
             self.load_client_state_dict(received_info)
-            self.train_dataloader = self.train_data[client_idx]
+            self.train_dataloader = self.train_data[dataset_idx]
             self.client_index = client_idx
             num_samples = len(self.train_dataloader) * self.args.batch_size
 
@@ -277,7 +277,7 @@ class Base_Server:
             server_outputs = self.aggregate_gradients(received_info)
 
         # check accuracy on test set
-        acc, class_prec, class_recall, class_f1 = self.evaluate(test_data=True)
+        acc, cf_matrix, class_prec, class_recall, class_f1 = self.evaluate(test_data=True)
         # self.log_info(received_info, acc)
         self.round += 1
         # save the accuracy if it is better
@@ -288,7 +288,7 @@ class Base_Server:
             self.acc = acc
 
         # return global model
-        return server_outputs, acc
+        return server_outputs, acc, cf_matrix
 
     def start(self):
         with open("{}/config.txt".format(self.save_path), "a+") as config:
@@ -422,11 +422,6 @@ class Base_Server:
                 test_sample_number += target.size(0)
             acc = test_correct / test_sample_number
 
-            if test_data is True and eval_model is None:
-                logging.info(
-                    "************* Server Acc = {:.4f} **************".format(acc)
-                )
-
         cf_matrix = confusion_matrix(y_true, y_pred)
 
         # Compute TP, FP, NP, TN
@@ -471,4 +466,4 @@ class Base_Server:
         # number of correct predictions from total samples
         acc2 = (true_pos.sum()) / tot
 
-        return acc, class_prec, class_recall, class_f1
+        return acc, cf_matrix, class_prec, class_recall, class_f1

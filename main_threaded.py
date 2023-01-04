@@ -5,7 +5,7 @@ from dotmap import DotMap
 
 import data_preprocessing.data_loader as dl
 from models.resnet import resnet56, resnet18
-
+import copy
 
 from models.logistic_regression import logistic_regression
 from defence.group_test import Group_Test
@@ -51,19 +51,22 @@ def run_clients(received_info):
 def allocate_clients_to_threads(args):
     mapping_dict = defaultdict(list)
     for round in range(args.comm_round):
-        if args.client_sample < 1.0:
-            num_clients = int(args.client_number * args.client_sample)
-            client_list = random.sample(range(args.client_number), num_clients)
-        else:
-            num_clients = args.client_number
-            client_list = list(range(num_clients))
-        if num_clients % args.thread_number == 0 and num_clients > 0:
-            clients_per_thread = int(num_clients / args.thread_number)
-            for c, t in enumerate(range(0, num_clients, clients_per_thread)):
-                idxs = [client_list[x] for x in range(t, t + clients_per_thread)]
-                mapping_dict[c].append(idxs)
-        else:
-            raise ValueError("Sampled client number not divisible by number of threads")
+
+        num_clients = args.client_number
+        client_list = list(range(num_clients))
+        if num_clients > 0:
+            idxs = [[] for i in range(args.thread_number)]
+            remaining_clients = num_clients
+            thread_idx = 0
+            client_idx = 0
+            while remaining_clients > 0:
+                idxs[thread_idx].extend([client_idx])
+
+                remaining_clients -= 1
+                thread_idx = (thread_idx + 1) % args.thread_number
+                client_idx += 1
+            for c, l in enumerate(idxs):
+                mapping_dict[c].append(l)
     return mapping_dict
 
 
@@ -76,54 +79,74 @@ def set_random_seed(seed=1):
     torch.cuda.manual_seed_all(seed)
     ## NOTE: If you want every run to be exactly the same each time
     ##       uncomment the following lines
-    # torch.backends.cudnn.deterministic = True
-    # torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 
 if __name__ == "__main__":
 
     args = DotMap()
-    args.comm_round = 2
+
     args.pretrained = False
     args.client_sample = 1.0
-    args.thread_number = 5
+    args.thread_number = 8
     args.val_size = 3000
     args.method = "fedavg"  # fedavg, fedsgd
     args.data_dir = (
         "data/mnist"  # data/cifar100, data/cifar10, data/mnist, data/fashionmnist
     )
-    args.partition_method = "homo"  # homo, hetero
+    args.partition_method = "hetero"  # homo, hetero
     args.client_number = 15
+
+    if args.client_number == 15:
+        num_tests = 8
+    elif args.client_number == 31:
+        num_tests = 10
 
     if "cifar" in args.data_dir:
         args.lr = 0.05
         args.momentum = 0.9
         args.wd = 0.001
+        args.comm_round = 50
+        args.group_test_round = 4
+        epochs_list = [5]
+        batch_size_list = [128]
+        num_classes = 10
+
     else:
         args.lr = 0.01
         args.momentum = 0
         args.wd = 0
+        args.comm_round = 10
+        args.group_test_round = 0
+        epochs_list = [1]
+        batch_size_list = [64]
+        num_classes = 10
 
-    MODE = 0  # 0: no defence (keep the malicous nodes), 1: oracle (remove all malicious nodes), 2: group testing
-    total_MC_it = 3
-    threshold_vec = np.arange(0.1, 0.8, 0.4).tolist()
+    MODE_list = [
+        2,
+        0,
+        1,
+    ]  # 0: no defence (keep the malicous nodes), 1: oracle (remove all malicious nodes), 2: group testing
+    
+    attack_list = [2] # 0: permutation attack, 1: random labels, 2: 1->7 label flip
+    
+    total_MC_it = 10
+    threshold_vec = np.arange(0.1, 1, 0.1).tolist()
     sim_result = {}
-
     # Set hyper parameters to sweep
     if args.partition_method == "homo":
         alpha_list = [np.inf]
     else:
-        alpha_list = [10]
+        alpha_list = [0.5]
 
-    epochs_list = [1]
     n_malicious_list = [5]
-    batch_size_list = [64]
 
     sim_params = list(
-        product(alpha_list, epochs_list, n_malicious_list, batch_size_list)
+        product(alpha_list, epochs_list, n_malicious_list, batch_size_list, MODE_list, attack_list)
     )
 
-    for (alpha, epochs, n_malicious, batch_size) in sim_params:
+    for (alpha, epochs, n_malicious, batch_size, MODE, ATTACK) in sim_params:
 
         # No need to loop over thresholds if we dont do group testing
         if MODE != 2:
@@ -131,6 +154,7 @@ if __name__ == "__main__":
 
         # prepare to store results
         sim_result["epochs"] = epochs
+        sim_result["group_test_round"] = args.group_test_round
         sim_result["batch_size"] = batch_size
         sim_result["alpha"] = alpha
         sim_result["n_malicious"] = n_malicious
@@ -142,16 +166,29 @@ if __name__ == "__main__":
         sim_result["client_number"] = args.client_number
         sim_result["total_MC_it"] = total_MC_it
         sim_result["threshold_vec"] = threshold_vec
-        sim_result["group_acc"] = np.zeros((len(threshold_vec), total_MC_it, 8))
+        sim_result["group_acc"] = np.zeros((len(threshold_vec), total_MC_it, num_tests))
+        sim_result["group_prec"] = np.zeros(
+            (len(threshold_vec), total_MC_it, num_tests, num_classes)
+        )
+        sim_result["group_recall"] = np.zeros(
+            (len(threshold_vec), total_MC_it, num_tests, num_classes)
+        )
+        sim_result["group_f1"] = np.zeros(
+            (len(threshold_vec), total_MC_it, num_tests, num_classes)
+        )
+        sim_result["bsc_channel"] = np.zeros((len(threshold_vec), total_MC_it, 2, 2))
         sim_result["malicious_clients"] = np.zeros(
             (len(threshold_vec), total_MC_it, args.client_number)
         )
         sim_result["DEC"] = np.zeros(
             (len(threshold_vec), total_MC_it, args.client_number)
         )
-        sim_result["syndrome"] = np.zeros((len(threshold_vec), total_MC_it, 8))
+        sim_result["syndrome"] = np.zeros((len(threshold_vec), total_MC_it, num_tests))
         sim_result["accuracy"] = np.zeros(
             (len(threshold_vec), total_MC_it, args.comm_round)
+        )
+        sim_result["cf_matrix"] = np.zeros(
+            (len(threshold_vec), total_MC_it, args.comm_round, num_classes, num_classes)
         )
 
         args.partition_alpha = alpha
@@ -185,15 +222,19 @@ if __name__ == "__main__":
                 attacks = list_of_lists = [[] for i in range(args.client_number)]
                 for client in range(args.client_number):
                     if client in malicious_clients:
-                        # label_flips = [(1, 7), (3, 9)]
-                        # label_flips = [(1, 7)]
-                        # attacks[client].append((flip_label, label_flips))
-                        # attacks[client].append((random_labels,))
-                        attacks[client].append((permute_labels,))
+                        if ATTACK == 0:
+                            attacks[client].append((permute_labels,))
+                        elif ATTACK == 1:
+                            attacks[client].append((random_labels,))
+                        elif ATTACK == 2:
+                            label_flips = [(1, 7)]
+                            attacks[client].append((flip_label, label_flips))
+                        
+                        
 
                 sim_result["malicious_clients"][
                     thres_indx, monte_carlo_iterr, :
-                ] = defective
+                ] = np.array(defective)
                 # -----------------------------------------
                 # Obtain dataset for server and the clients
                 # -----------------------------------------
@@ -245,8 +286,8 @@ if __name__ == "__main__":
                     args.epochs,
                     args.client_number,
                 )
-                if not os.path.exists(server_dict["save_path"]):
-                    os.makedirs(server_dict["save_path"])
+                # if not os.path.exists(server_dict["save_path"]):
+                #     os.makedirs(server_dict["save_path"])
                 server = Server(server_dict, args)
                 # get global model to start from
                 server_outputs = server.start()
@@ -257,7 +298,9 @@ if __name__ == "__main__":
                 mapping_dict = allocate_clients_to_threads(args)
                 client_dict = [
                     {
-                        "train_data": train_data_local_dict,
+                        "train_data": [
+                            train_data_local_dict[j] for j in mapping_dict[i][0]
+                        ],
                         "device": "cuda:{}".format(i % torch.cuda.device_count())
                         if torch.cuda.is_available()
                         else "cpu",
@@ -280,11 +323,14 @@ if __name__ == "__main__":
                     args.client_number,
                     prevalence,
                     threshold_dec,
-                    min_acc=0.815,
+                    min_acc=0,
                     threshold_from_max_acc=0.99,
                     P_FA_test=0.05,
                     P_MD_test=0.05,
                 )
+                sim_result["bsc_channel"][
+                    thres_indx, monte_carlo_iterr, :, :
+                ] = gt.ChannelMatrix
 
                 syndrome = np.matmul(defective, gt.parity_check_matrix.transpose())
 
@@ -327,10 +373,15 @@ if __name__ == "__main__":
                             # -----------------------------------------
                             #           Group Testing
                             # -----------------------------------------
-                            if r == 0:
-                                group_accuracies = gt.get_group_accuracies(
-                                    client_outputs, server
-                                )
+                            if r < args.group_test_round:
+                                DEC = np.zeros((1, args.client_number), dtype=np.uint8)
+                            elif r == args.group_test_round:
+                                (
+                                    group_accuracies,
+                                    prec,
+                                    rec,
+                                    f1,
+                                ) = gt.get_group_accuracies(client_outputs, server)
                                 DEC = gt.perform_group_test(group_accuracies)
                                 MD = MD + np.sum(gt.DEC[defective == 1] == 0)
                                 FA = FA + np.sum(gt.DEC[defective == 0] == 1)
@@ -342,6 +393,15 @@ if __name__ == "__main__":
                                 sim_result["group_acc"][
                                     thres_indx, monte_carlo_iterr, :
                                 ] = group_accuracies
+                                sim_result["group_prec"][
+                                    thres_indx, monte_carlo_iterr, :, :
+                                ] = prec
+                                sim_result["group_recall"][
+                                    thres_indx, monte_carlo_iterr, :, :
+                                ] = rec
+                                sim_result["group_f1"][
+                                    thres_indx, monte_carlo_iterr, :, :
+                                ] = f1
                                 sim_result["DEC"][
                                     thres_indx, monte_carlo_iterr, :
                                 ] = DEC
@@ -354,13 +414,20 @@ if __name__ == "__main__":
                             # If all malicious, just use all
                             if all_class_malicious == True:
                                 clients_to_aggregate = client_outputs
-                            else:
+                            else: 
                                 clients_to_aggregate = [
                                     client_outputs[client_idx]
                                     for client_idx in range(args.client_number)
                                     if DEC[:, client_idx] == 0
                                 ]
-                        server_outputs, acc[0, r] = server.run(clients_to_aggregate)
+                        server_outputs, acc[0, r], cf_matrix = server.run(
+                            clients_to_aggregate
+                        )
+
+                        sim_result["cf_matrix"][
+                            thres_indx, monte_carlo_iterr, r, :, :
+                        ] = cf_matrix
+
                         round_end = time.time()
                         logging.info(f"Round {r} Time: {round_end - round_start}")
 
@@ -371,21 +438,30 @@ if __name__ == "__main__":
             P_MD[thres_indx] = MD / (n_malicious * total_MC_it)
             P_FA[thres_indx] = FA / ((args.client_number - n_malicious) * total_MC_it)
 
-        # make all nparrays JSON serializable
-        sim_result["accuracy"] = accuracy.tolist()
-        sim_result["P_MD"] = P_MD.tolist()
-        sim_result["P_FA"] = P_FA.tolist()
-        sim_result["group_acc"] = sim_result["group_acc"].tolist()
-        sim_result["DEC"] = sim_result["DEC"].tolist()
-        sim_result["syndrome"] = sim_result["syndrome"].tolist()
-        sim_result["malicious_clients"] = sim_result["malicious_clients"].tolist()
+            # make all nparrays JSON serializable
+            checkpoint_dict = copy.deepcopy(sim_result)
 
-        if "mnist" in args.data_dir:
-            prefix = "./results/MNIST_"
-        elif "cifar" in args.data_dir:
-            prefix = "./results/CIFAR10_"
-        suffix = f"m-{n_malicious}_e-{args.epochs}_bs-{args.batch_size}_alpha-{args.partition_alpha}_totalMC-{total_MC_it}_MODE-{MODE}.txt"
-        sim_title = prefix + suffix
+            checkpoint_dict["accuracy"] = accuracy.tolist()
+            checkpoint_dict["P_MD"] = P_MD.tolist()
+            checkpoint_dict["P_FA"] = P_FA.tolist()
+            checkpoint_dict["group_acc"] = checkpoint_dict["group_acc"].tolist()
+            checkpoint_dict["group_prec"] = checkpoint_dict["group_prec"].tolist()
+            checkpoint_dict["group_recall"] = checkpoint_dict["group_recall"].tolist()
+            checkpoint_dict["group_f1"] = checkpoint_dict["group_f1"].tolist()
+            checkpoint_dict["cf_matrix"] = checkpoint_dict["cf_matrix"].tolist()
+            checkpoint_dict["DEC"] = checkpoint_dict["DEC"].tolist()
+            checkpoint_dict["syndrome"] = checkpoint_dict["syndrome"].tolist()
+            checkpoint_dict["malicious_clients"] = checkpoint_dict[
+                "malicious_clients"
+            ].tolist()
+            checkpoint_dict["bsc_channel"] = checkpoint_dict["bsc_channel"].tolist()
 
-        with open(sim_title, "w") as convert_file:
-            convert_file.write(json.dumps(sim_result))
+            if "mnist" in args.data_dir:
+                prefix = "./results/MNIST_"
+            elif "cifar" in args.data_dir:
+                prefix = "./results/CIFAR10_"
+            suffix = f"m-{n_malicious}/{args.client_number}_e-{args.epochs}_bs-{args.batch_size}_alpha-{args.partition_alpha}_totalMC-{total_MC_it}_MODE-{MODE}_att-{ATTACK}.txt"
+            sim_title = prefix + suffix
+
+            with open(sim_title, "w") as convert_file:
+                convert_file.write(json.dumps(checkpoint_dict))
