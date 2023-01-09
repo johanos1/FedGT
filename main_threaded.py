@@ -255,9 +255,23 @@ if __name__ == "__main__":
                 #               Setup Clients
                 # -----------------------------------------
                 mapping_dict = allocate_clients_to_threads(args)
+                #client_dict = [
+                #    {
+                #        "train_data": train_data_local_dict,
+                #        "device": "cuda:{}".format(i % torch.cuda.device_count())
+                #        if torch.cuda.is_available()
+                #        else "cpu",
+                #        "client_map": mapping_dict[i],
+                #        "model_type": Model,
+                #        "num_classes": class_num,
+                #    }
+                #    for i in range(args.thread_number)
+                #]
                 client_dict = [
                     {
-                        "train_data": train_data_local_dict,
+                        "train_data": [
+                            train_data_local_dict[j] for j in mapping_dict[i][0]
+                        ],
                         "device": "cuda:{}".format(i % torch.cuda.device_count())
                         if torch.cuda.is_available()
                         else "cpu",

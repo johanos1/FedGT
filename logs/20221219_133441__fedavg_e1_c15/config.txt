@@ -1,0 +1,1 @@
+{"_map": {"comm_round": 2, "pretrained": false, "client_sample": 1.0, "thread_number": 5, "val_size": 3000, "method": "fedavg", "data_dir": "data/mnist", "partition_method": "homo", "client_number": 15, "lr": 0.01, "momentum": 0, "wd": 0, "partition_alpha": Infinity, "epochs": 1, "batch_size": 64}, "_dynamic": true, "_prevent_method_masking": false}

@@ -38,10 +38,14 @@ class Base_Client:
     def run(self, received_info):
 
         client_results = []
-        for client_idx in self.client_map[self.round]:
+        for dataset_idx, client_idx in enumerate(self.client_map[self.round]):
             self.load_client_state_dict(received_info)
-            self.train_dataloader = self.train_data[client_idx]
+            self.train_dataloader = self.train_data[dataset_idx]
             self.client_index = client_idx
+        #for client_idx in self.client_map[self.round]:
+        #    self.load_client_state_dict(received_info)
+        #    self.train_dataloader = self.train_data[client_idx]
+        #    self.client_index = client_idx
             num_samples = len(self.train_dataloader) * self.args.batch_size
 
             if self.args.method == "fedavg":
