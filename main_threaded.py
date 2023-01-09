@@ -34,7 +34,7 @@ from concurrent.futures import ProcessPoolExecutor as Pool
 
 # Helper Functions
 def init_process(q, Client):
-    set_random_seed()
+    # set_random_seed()
     global client
     ci = q.get()
     client = Client(ci[0], ci[1])
@@ -95,7 +95,7 @@ if __name__ == "__main__":
     args.data_dir = (
         "data/mnist"  # data/cifar100, data/cifar10, data/mnist, data/fashionmnist
     )
-    args.partition_method = "hetero"  # homo, hetero
+    args.partition_method = "homo"  # homo, hetero
     args.client_number = 15
 
     if args.client_number == 15:
@@ -124,14 +124,12 @@ if __name__ == "__main__":
         num_classes = 10
 
     MODE_list = [
-        2,
-        0,
-        1,
-    ]  # 0: no defence (keep the malicous nodes), 1: oracle (remove all malicious nodes), 2: group testing
-    
-    attack_list = [2] # 0: permutation attack, 1: random labels, 2: 1->7 label flip
-    
-    total_MC_it = 10
+        3,
+    ]  # 0: no defence (keep the malicous nodes), 1: oracle (remove all malicious nodes), 2: group testing, 3: noiseless group testing
+
+    attack_list = [0]  # 0: permutation attack, 1: random labels, 2: 1->7 label flip
+
+    total_MC_it = 100
     threshold_vec = np.arange(0.1, 1, 0.1).tolist()
     sim_result = {}
     # Set hyper parameters to sweep
@@ -143,13 +141,20 @@ if __name__ == "__main__":
     n_malicious_list = [5]
 
     sim_params = list(
-        product(alpha_list, epochs_list, n_malicious_list, batch_size_list, MODE_list, attack_list)
+        product(
+            alpha_list,
+            epochs_list,
+            n_malicious_list,
+            batch_size_list,
+            MODE_list,
+            attack_list,
+        )
     )
 
     for (alpha, epochs, n_malicious, batch_size, MODE, ATTACK) in sim_params:
 
         # No need to loop over thresholds if we dont do group testing
-        if MODE != 2:
+        if MODE < 2:
             threshold_vec = [np.inf]
 
         # prepare to store results
@@ -229,8 +234,6 @@ if __name__ == "__main__":
                         elif ATTACK == 2:
                             label_flips = [(1, 7)]
                             attacks[client].append((flip_label, label_flips))
-                        
-                        
 
                 sim_result["malicious_clients"][
                     thres_indx, monte_carlo_iterr, :
@@ -279,13 +282,13 @@ if __name__ == "__main__":
                 }
 
                 # init server
-                server_dict["save_path"] = "{}/logs/{}__{}_e{}_c{}".format(
-                    os.getcwd(),
-                    time.strftime("%Y%m%d_%H%M%S"),
-                    args.method,
-                    args.epochs,
-                    args.client_number,
-                )
+                # server_dict["save_path"] = "{}/logs/{}__{}_e{}_c{}".format(
+                #    os.getcwd(),
+                #    time.strftime("%Y%m%d_%H%M%S"),
+                #    args.method,
+                #    args.epochs,
+                #    args.client_number,
+                # )
                 # if not os.path.exists(server_dict["save_path"]):
                 #     os.makedirs(server_dict["save_path"])
                 server = Server(server_dict, args)
@@ -319,15 +322,27 @@ if __name__ == "__main__":
                 #          Make Group Test Object
                 # -----------------------------------------
                 prevalence = n_malicious / args.client_number
-                gt = Group_Test(
-                    args.client_number,
-                    prevalence,
-                    threshold_dec,
-                    min_acc=0,
-                    threshold_from_max_acc=0.99,
-                    P_FA_test=0.05,
-                    P_MD_test=0.05,
-                )
+                if MODE != 3:
+                    gt = Group_Test(
+                        args.client_number,
+                        prevalence,
+                        threshold_dec,
+                        min_acc=0,
+                        threshold_from_max_acc=0.99,
+                        P_FA_test=0.05,
+                        P_MD_test=0.05,
+                    )
+                else:
+                    # Noiseless group testing! #
+                    gt = Group_Test(
+                        args.client_number,
+                        prevalence,
+                        threshold_dec,
+                        min_acc=0,
+                        threshold_from_max_acc=0.99,
+                        P_FA_test=1e-6,
+                        P_MD_test=1e-6,
+                    )
                 sim_result["bsc_channel"][
                     thres_indx, monte_carlo_iterr, :, :
                 ] = gt.ChannelMatrix
@@ -414,7 +429,59 @@ if __name__ == "__main__":
                             # If all malicious, just use all
                             if all_class_malicious == True:
                                 clients_to_aggregate = client_outputs
-                            else: 
+                            else:
+                                clients_to_aggregate = [
+                                    client_outputs[client_idx]
+                                    for client_idx in range(args.client_number)
+                                    if DEC[:, client_idx] == 0
+                                ]
+
+                        elif MODE == 3:
+                            # -----------------------------------------
+                            #         Noiseless Group Testing
+                            # -----------------------------------------
+                            if r < args.group_test_round:
+                                DEC = np.zeros((1, args.client_number), dtype=np.uint8)
+                            elif r == args.group_test_round:
+                                (
+                                    group_accuracies,
+                                    prec,
+                                    rec,
+                                    f1,
+                                ) = gt.get_group_accuracies(client_outputs, server)
+                                DEC = gt.noiseless_group_test(syndrome)
+                                MD = MD + np.sum(gt.DEC[defective == 1] == 0)
+                                FA = FA + np.sum(gt.DEC[defective == 0] == 1)
+                                if (
+                                    np.sum(DEC) == DEC.shape[1]
+                                ):  # , "All are classified as malicious"
+                                    all_class_malicious = True
+
+                                sim_result["group_acc"][
+                                    thres_indx, monte_carlo_iterr, :
+                                ] = group_accuracies
+                                sim_result["group_prec"][
+                                    thres_indx, monte_carlo_iterr, :, :
+                                ] = prec
+                                sim_result["group_recall"][
+                                    thres_indx, monte_carlo_iterr, :, :
+                                ] = rec
+                                sim_result["group_f1"][
+                                    thres_indx, monte_carlo_iterr, :, :
+                                ] = f1
+                                sim_result["DEC"][
+                                    thres_indx, monte_carlo_iterr, :
+                                ] = DEC
+                                sim_result["syndrome"][
+                                    thres_indx, monte_carlo_iterr
+                                ] = syndrome[0]
+                            # -----------------------------------------
+                            #               Aggregation
+                            # -----------------------------------------
+                            # If all malicious, just use all
+                            if all_class_malicious == True:
+                                clients_to_aggregate = client_outputs
+                            else:
                                 clients_to_aggregate = [
                                     client_outputs[client_idx]
                                     for client_idx in range(args.client_number)
@@ -460,7 +527,7 @@ if __name__ == "__main__":
                 prefix = "./results/MNIST_"
             elif "cifar" in args.data_dir:
                 prefix = "./results/CIFAR10_"
-            suffix = f"m-{n_malicious}/{args.client_number}_e-{args.epochs}_bs-{args.batch_size}_alpha-{args.partition_alpha}_totalMC-{total_MC_it}_MODE-{MODE}_att-{ATTACK}.txt"
+            suffix = f"m-{n_malicious},{args.client_number}_e-{args.epochs}_bs-{args.batch_size}_alpha-{args.partition_alpha}_totalMC-{total_MC_it}_MODE-{MODE}_att-{ATTACK}.txt"
             sim_title = prefix + suffix
 
             with open(sim_title, "w") as convert_file:

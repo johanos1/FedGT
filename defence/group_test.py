@@ -103,6 +103,23 @@ class Group_Test:
             self.DEC,
         )
         return self.DEC
+
+    def noiseless_group_test(self, syndrome):
+             
+        tests = np.zeros((1, self.n_tests), dtype=np.uint8)
+        tests[0, syndrome[0,:] > 0] = 1
+        self.fun(
+            self.parity_check_matrix,
+            self.LLRi,
+            tests,
+            self.ChannelMatrix,
+            self.threshold_dec,
+            self.n_clients,
+            self.n_tests,
+            self.LLRO,
+            self.DEC,
+        )
+        return self.DEC
       
     def get_group_accuracies(self, client_models, server):
         group_acc = np.zeros(self.n_tests)
@@ -122,13 +139,14 @@ class Group_Test:
             # note, aside from accuracy, we have access to precision, recall, and f1 score for each class
             (
                 group_acc[i],
+                cf_matrix, 
                 class_precision,
                 class_recall,
                 class_f1,
             ) = server.evaluate(
                 test_data=False, eval_model=model
             )
-        return group_acc
+        return group_acc, class_precision, class_recall, class_f1
         
     
     

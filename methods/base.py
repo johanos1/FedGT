@@ -257,7 +257,7 @@ class Base_Server:
         self.acc = 0.0
         self.round = 0
         self.args = args
-        self.save_path = server_dict["save_path"]
+        # self.save_path = server_dict["save_path"]
 
     def run(self, received_info: List[OrderedDict]) -> List[OrderedDict]:
         """Aggregater client models and evaluate accuracy
@@ -277,22 +277,24 @@ class Base_Server:
             server_outputs = self.aggregate_gradients(received_info)
 
         # check accuracy on test set
-        acc, cf_matrix, class_prec, class_recall, class_f1 = self.evaluate(test_data=True)
+        acc, cf_matrix, class_prec, class_recall, class_f1 = self.evaluate(
+            test_data=True
+        )
         # self.log_info(received_info, acc)
         self.round += 1
         # save the accuracy if it is better
         if acc > self.acc:
-            torch.save(
-                self.model.state_dict(), "{}/{}.pt".format(self.save_path, "server")
-            )
+            # torch.save(
+            #    self.model.state_dict(), "{}/{}.pt".format(self.save_path, "server")
+            # )
             self.acc = acc
 
         # return global model
         return server_outputs, acc, cf_matrix
 
     def start(self):
-        with open("{}/config.txt".format(self.save_path), "a+") as config:
-            config.write(json.dumps(vars(self.args)))
+        # with open("{}/config.txt".format(self.save_path), "a+") as config:
+        #    config.write(json.dumps(vars(self.args)))
         return [self.model.cpu().state_dict() for x in range(self.args.thread_number)]
 
     # def log_info(self, client_info, acc):
