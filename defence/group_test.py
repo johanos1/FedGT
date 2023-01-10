@@ -86,11 +86,11 @@ class Group_Test:
     def perform_group_test(self, group_acc):
      
         max_acc = group_acc.max()
-        if max_acc < self.min_acc:
-            tests = np.ones((1, self.n_tests), dtype=np.uint8)
-        else:
-            tests = np.zeros((1, self.n_tests), dtype=np.uint8)
-            tests[:, group_acc < self.threshold_from_max_acc  * max_acc] = 1
+        # if max_acc < self.min_acc:
+        #     tests = np.ones((1, self.n_tests), dtype=np.uint8)
+        # else:
+        tests = np.zeros((1, self.n_tests), dtype=np.uint8)
+        tests[:, group_acc < self.threshold_from_max_acc  * max_acc] = 1
         self.fun(
             self.parity_check_matrix,
             self.LLRi,
@@ -123,6 +123,9 @@ class Group_Test:
       
     def get_group_accuracies(self, client_models, server):
         group_acc = np.zeros(self.n_tests)
+        class_precision = np.zeros((self.n_tests, 10))
+        class_recall = np.zeros((self.n_tests, 10))
+        class_f1 = np.zeros((self.n_tests, 10))
         for i in range(self.n_tests):
         # np.where gives a tuple where first entry is the list we want
             client_idxs = np.where(
@@ -138,11 +141,10 @@ class Group_Test:
             )[0]
             # note, aside from accuracy, we have access to precision, recall, and f1 score for each class
             (
-                group_acc[i],
-                cf_matrix, 
-                class_precision,
-                class_recall,
-                class_f1,
+                group_acc[i], cf_matrix,
+                class_precision[i,:],
+                class_recall[i,:],
+                class_f1[i,:]
             ) = server.evaluate(
                 test_data=False, eval_model=model
             )

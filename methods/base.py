@@ -5,7 +5,6 @@ Code credit to https://github.com/mmendiet/FedAlign/blob/main/methods/base.py
 from typing import OrderedDict, List
 import torch
 import logging
-import json
 from torch.multiprocessing import current_process
 from sklearn.metrics import confusion_matrix, classification_report
 import numpy as np
@@ -277,9 +276,7 @@ class Base_Server:
             server_outputs = self.aggregate_gradients(received_info)
 
         # check accuracy on test set
-        acc, cf_matrix, class_prec, class_recall, class_f1 = self.evaluate(
-            test_data=True
-        )
+        acc, cf_matrix, class_prec, class_recall, class_f1 = self.evaluate(test_data=True)
         # self.log_info(received_info, acc)
         self.round += 1
         # save the accuracy if it is better
@@ -296,15 +293,6 @@ class Base_Server:
         # with open("{}/config.txt".format(self.save_path), "a+") as config:
         #    config.write(json.dumps(vars(self.args)))
         return [self.model.cpu().state_dict() for x in range(self.args.thread_number)]
-
-    # def log_info(self, client_info, acc):
-
-    #     client_acc = sum([c["acc"] for c in client_info]) / len(client_info)
-    #     out_str = "Test/AccTop1: {}, Client_Train/AccTop1: {}, round: {}\n".format(
-    #         acc, client_acc, self.round
-    #     )
-    #     with open("{}/out.log".format(self.save_path), "a+") as out_file:
-    #         out_file.write(out_str)
 
     def aggregate_gradients(self, client_info):
 
@@ -364,16 +352,6 @@ class Base_Server:
         if update_server is True:
             # update server model with the client average
             self.model.load_state_dict(ssd)
-
-            if self.args.save_client:
-                # save the weights from each client
-                for client in client_info:
-                    torch.save(
-                        client["weights"],
-                        "{}/client_{}.pt".format(
-                            self.save_path, client["client_index"]
-                        ),
-                    )
             # return a copy of the aggregated model
             return [
                 self.model.cpu().state_dict() for x in range(self.args.thread_number)

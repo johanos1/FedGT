@@ -93,7 +93,7 @@ if __name__ == "__main__":
     args.val_size = 3000
     args.method = "fedavg"  # fedavg, fedsgd
     args.data_dir = (
-        "data/mnist"  # data/cifar100, data/cifar10, data/mnist, data/fashionmnist
+        "data/cifar10"  # data/cifar100, data/cifar10, data/mnist, data/fashionmnist
     )
     args.partition_method = "homo"  # homo, hetero
     args.client_number = 15
@@ -123,13 +123,12 @@ if __name__ == "__main__":
         batch_size_list = [64]
         num_classes = 10
 
-    MODE_list = [
-        3,
-    ]  # 0: no defence (keep the malicous nodes), 1: oracle (remove all malicious nodes), 2: group testing, 3: noiseless group testing
-
-    attack_list = [0]  # 0: permutation attack, 1: random labels, 2: 1->7 label flip
-
-    total_MC_it = 100
+    # 0: no defence (keep the malicous nodes), 1: oracle (remove all malicious nodes), 2: group testing 
+    MODE_list = [2, 1, 0]  
+    
+    attack_list = [0] # 0: permutation attack, 1: random labels, 2: 1->7 label flip
+    
+    total_MC_it = 10
     threshold_vec = np.arange(0.1, 1, 0.1).tolist()
     sim_result = {}
     # Set hyper parameters to sweep
@@ -138,17 +137,10 @@ if __name__ == "__main__":
     else:
         alpha_list = [0.5]
 
-    n_malicious_list = [5]
+    n_malicious_list = [1]
 
     sim_params = list(
-        product(
-            alpha_list,
-            epochs_list,
-            n_malicious_list,
-            batch_size_list,
-            MODE_list,
-            attack_list,
-        )
+        product(alpha_list, epochs_list, n_malicious_list, batch_size_list, MODE_list, attack_list)
     )
 
     for (alpha, epochs, n_malicious, batch_size, MODE, ATTACK) in sim_params:
@@ -234,6 +226,8 @@ if __name__ == "__main__":
                         elif ATTACK == 2:
                             label_flips = [(1, 7)]
                             attacks[client].append((flip_label, label_flips))
+                        
+                        
 
                 sim_result["malicious_clients"][
                     thres_indx, monte_carlo_iterr, :
@@ -429,7 +423,7 @@ if __name__ == "__main__":
                             # If all malicious, just use all
                             if all_class_malicious == True:
                                 clients_to_aggregate = client_outputs
-                            else:
+                            else: 
                                 clients_to_aggregate = [
                                     client_outputs[client_idx]
                                     for client_idx in range(args.client_number)
