@@ -18,15 +18,11 @@ logger.setLevel(logging.INFO)
 
 def record_net_data_stats(server_val_dl, server_test_dl, client_dict_dl):
 
-    val_unique, val_counts = np.unique(
-        np.array(server_val_dl.dataset.target), return_counts=True
-    )
+    val_unique, val_counts = np.unique(np.array(server_val_dl.dataset.target), return_counts=True)
     tmp = {val_unique[i]: val_counts[i] for i in range(len(val_unique))}
     logging.info(f"\nServer validation set: {str(tmp)}")
 
-    test_unique, test_counts = np.unique(
-        np.array(server_test_dl.dataset.targets), return_counts=True
-    )
+    test_unique, test_counts = np.unique(np.array(server_test_dl.dataset.targets), return_counts=True)
     tmp = {test_unique[i]: test_counts[i] for i in range(len(test_unique))}
     logging.info(f"Server test set: {str(tmp)}\n")
 
@@ -126,18 +122,10 @@ def partition_data(data_obj, partition, n_nets, alpha):
                 np.random.shuffle(idx_k)
                 proportions = np.random.dirichlet(np.repeat(alpha, n_nets))
                 ## Balance
-                proportions = np.array(
-                    [
-                        p * (len(idx_j) < N / n_nets)
-                        for p, idx_j in zip(proportions, idx_batch)
-                    ]
-                )
+                proportions = np.array([p * (len(idx_j) < N / n_nets) for p, idx_j in zip(proportions, idx_batch)])
                 proportions = proportions / proportions.sum()
                 proportions = (np.cumsum(proportions) * len(idx_k)).astype(int)[:-1]
-                idx_batch = [
-                    idx_j + idx.tolist()
-                    for idx_j, idx in zip(idx_batch, np.split(idx_k, proportions))
-                ]
+                idx_batch = [idx_j + idx.tolist() for idx_j, idx in zip(idx_batch, np.split(idx_k, proportions))]
                 min_size = min([len(idx_j) for idx_j in idx_batch])
 
         for j in range(n_nets):
@@ -182,9 +170,7 @@ def load_partition_data(
     test_data_num = len(server_test_dl.dataset)
 
     # Start looking at data for clients
-    class_num, net_dataidx_map = partition_data(
-        data_obj, partition_method, client_number, partition_alpha
-    )
+    class_num, net_dataidx_map = partition_data(data_obj, partition_method, client_number, partition_alpha)
 
     # get local dataset
     client_data_num = dict()
@@ -199,8 +185,7 @@ def load_partition_data(
         client_dl_dict[client_idx] = client_dl
 
         logging.info(
-            "client_idx = %d, local_sample_number = %d, batch_num = %d"
-            % (client_idx, local_data_num, len(client_dl))
+            "client_idx = %d, local_sample_number = %d, batch_num = %d" % (client_idx, local_data_num, len(client_dl))
         )
 
     record_net_data_stats(server_val_dl, server_test_dl, client_dl_dict)

@@ -18,9 +18,9 @@ class Client(Base_Client):
 
         self.optimizer = torch.optim.SGD(
             self.model.parameters(),
-            lr=self.args.lr,
-            momentum=self.args.momentum,
-            weight_decay=self.args.wd,
+            lr=args.lr,
+            momentum=args.momentum,
+            weight_decay=args.wd,
         )
 
 

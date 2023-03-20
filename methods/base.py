@@ -5,8 +5,7 @@ Code credit to https://github.com/mmendiet/FedAlign/blob/main/methods/base.py
 from typing import OrderedDict, List
 import torch
 import logging
-from torch.multiprocessing import current_process
-from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.metrics import confusion_matrix
 import numpy as np
 import copy
 
@@ -19,7 +18,8 @@ class Base_Client:
         self.device = client_dict["device"]
         self.model_type = client_dict["model_type"]
         self.num_classes = client_dict["num_classes"]
-        self.args = args
+        self.epochs = args.epochs
+        self.batch_size = args.batch_size
         self.round = 0
         self.client_map = client_dict["client_map"]
         self.train_dataloader = None
@@ -41,82 +41,26 @@ class Base_Client:
             self.load_client_state_dict(received_info)
             self.train_dataloader = self.train_data[dataset_idx]
             self.client_index = client_idx
-            num_samples = len(self.train_dataloader) * self.args.batch_size
+            num_samples = len(self.train_dataloader) * self.batch_size
 
-            if self.args.method == "fedavg":
-
-                weights = self.train_model()
-
-                # acc = self.test()
-                # acc, class_prec, class_recall, class_f1 = self.test_classlevel()
-                # client_results.append(
-                #    {
-                #        "weights": weights,
-                #        "num_samples": num_samples,
-                #        "client_index": self.client_index,
-                #    }
-                # )
-
-                client_results.append(
-                    {
-                        "weights": copy.deepcopy(weights),
-                        "num_samples": num_samples,
-                        "client_index": self.client_index,
-                    }
-                )
-
-            elif self.args.method == "fedsgd":
-                gradients = self.accumulate_gradients()
-                # acc = self.test()
-                # acc, class_prec, class_recall, class_f1 = self.test_classlevel()
-                client_results.append(
-                    {
-                        "gradients": gradients,
-                        "num_samples": num_samples,
-                        "client_index": self.client_index,
-                    }
-                )
+            weights = self.train_model()
+            client_results.append(
+                {
+                    "weights": copy.deepcopy(weights),
+                    "num_samples": num_samples,
+                    "client_index": self.client_index,
+                }
+            )
 
         self.round += 1
         return client_results
-
-    def accumulate_gradients(self):
-        # move model to GPU if used
-        self.model.to(self.device)
-        # enable training mode
-        self.model.train()
-
-        epoch_loss = []
-        for epoch in range(self.args.epochs):
-            batch_loss = []
-            for batch_idx, (images, labels) in enumerate(self.train_dataloader):
-                images, labels = images.to(self.device), labels.to(self.device)
-                log_probs = self.model(images)
-                loss = self.criterion(log_probs, labels)
-                loss.backward()  # accumulate gradients
-                batch_loss.append(loss.item())
-        # if len(batch_loss) > 0:
-        #     epoch_loss.append(sum(batch_loss) / len(batch_loss))
-        #     logging.info(
-        ##         "(client {}. Local Training Epoch: {} \tLoss: {:.6f}".format(
-        #            self.client_index,
-        #            epoch,
-        #            sum(epoch_loss) / len(epoch_loss),
-        #        )
-        #    )
-
-        grads = {}
-        for name, param in self.model.named_parameters():
-            grads[name] = param.grad
-
-        return grads
 
     def train_model(self):
         # train the local model
         self.model.to(self.device)
         self.model.train()
         epoch_loss = []
-        for epoch in range(self.args.epochs):
+        for epoch in range(self.epochs):
             batch_loss = []
             for batch_idx, (images, labels) in enumerate(self.train_dataloader):
                 # logging.info(images.shape)
@@ -167,11 +111,7 @@ class Base_Client:
                 # test_loss += loss.item() * target.size(0)
                 test_sample_number += target.size(0)
             acc = (test_correct / test_sample_number) * 100
-            logging.info(
-                "************* Client {} Acc = {:.2f} **************".format(
-                    self.client_index, acc
-                )
-            )
+            logging.info("************* Client {} Acc = {:.2f} **************".format(self.client_index, acc))
         return acc
 
     def test_classlevel(self):
@@ -208,9 +148,7 @@ class Base_Client:
             true_pos[i] = cf_matrix[i, i].astype(np.float64)
             false_pos[i] = (cf_matrix[:, i].sum() - true_pos[i]).astype(np.float64)
             false_neg[i] = (cf_matrix[i, :].sum() - true_pos[i]).astype(np.float64)
-            true_neg[i] = (
-                cf_matrix.sum().sum() - true_pos[i] - false_pos[i] - false_neg[i]
-            ).astype(np.float64)
+            true_neg[i] = (cf_matrix.sum().sum() - true_pos[i] - false_pos[i] - false_neg[i]).astype(np.float64)
 
         tot = len(self.train_dataloader.dataset)
         # what fraction of positive predictions were indeed positive labels
@@ -246,17 +184,12 @@ class Base_Server:
     def __init__(self, server_dict, args):
         self.val_data = server_dict["val_data"]
         self.test_data = server_dict["test_data"]
-        self.device = (
-            "cuda:{}".format(torch.cuda.device_count() - 1)
-            if torch.cuda.is_available()
-            else "cpu"
-        )
+        self.device = "cuda:{}".format(torch.cuda.device_count() - 1) if torch.cuda.is_available() else "cpu"
         self.model_type = server_dict["model_type"]
         self.num_classes = server_dict["num_classes"]
         self.acc = 0.0
         self.round = 0
-        self.args = args
-        # self.save_path = server_dict["save_path"]
+        self.n_threads = args.n_threads
 
     def run(self, received_info: List[OrderedDict]) -> List[OrderedDict]:
         """Aggregater client models and evaluate accuracy
@@ -267,13 +200,8 @@ class Base_Server:
         Returns:
             List[OrderedDict]: copies of global model to each thread
         """
-        if self.args.method == "fedavg":
-            # aggregate client models
-            server_outputs = self.aggregate_models(received_info)
-
-        elif self.args.method == "fedsgd":
-            # aggregate client gradients
-            server_outputs = self.aggregate_gradients(received_info)
+        # aggregate client models
+        server_outputs = self.aggregate_models(received_info)
 
         # check accuracy on test set
         acc, cf_matrix, class_prec, class_recall, class_f1 = self.evaluate(test_data=True)
@@ -290,40 +218,7 @@ class Base_Server:
         return server_outputs, acc, cf_matrix
 
     def start(self):
-        # with open("{}/config.txt".format(self.save_path), "a+") as config:
-        #    config.write(json.dumps(vars(self.args)))
-        return [self.model.cpu().state_dict() for x in range(self.args.thread_number)]
-
-    def aggregate_gradients(self, client_info):
-
-        # accumulate all gradients
-        total_grads = {}
-        n_total_samples = sum([x["num_samples"] for x in client_info])
-        for info in client_info:
-            # get number of samples at current client
-            n_samples = info["num_samples"]
-            # Loop over the gradients
-            for k, v in info["gradients"].items():
-                # update total gradients for layer k
-                w = n_samples / n_total_samples
-                # if the layer does not exist, add to dictionary
-                if k not in total_grads:
-                    total_grads[k] = torch.mul(v, w)
-                else:
-                    total_grads[k] += torch.mul(v, w)
-
-        # Update the global model with aggregate gradients
-        # change to training mode
-        self.model.train()
-        # make gradient zero
-        self.optimizer.zero_grad()
-        # replace all gradients in model with the aggregated gradients
-        for k, v in self.model.named_parameters():
-            v.grad = total_grads[k]
-        # perform gradient descent step
-        self.optimizer.step()
-
-        return [self.model.cpu().state_dict() for x in range(self.args.thread_number)]
+        return [self.model.cpu().state_dict() for x in range(self.n_threads)]
 
     def aggregate_models(self, client_info, update_server=True):
         """Server aggregation of client models
@@ -339,10 +234,7 @@ class Base_Server:
         # pick only the weights from the clients
         client_sd = [c["weights"] for c in client_info]
         # compute fraction of data samples each client has
-        cw = [
-            c["num_samples"] / sum([x["num_samples"] for x in client_info])
-            for c in client_info
-        ]
+        cw = [c["num_samples"] / sum([x["num_samples"] for x in client_info]) for c in client_info]
         # load the previous server model
         ssd = self.model.state_dict()
         # go through each layer in model and replace with weighted average of client models
@@ -353,11 +245,9 @@ class Base_Server:
             # update server model with the client average
             self.model.load_state_dict(ssd)
             # return a copy of the aggregated model
-            return [
-                self.model.cpu().state_dict() for x in range(self.args.thread_number)
-            ]
+            return [self.model.cpu().state_dict() for x in range(self.n_threads)]
         else:
-            return [ssd for x in range(self.args.thread_number)]
+            return [ssd for x in range(self.n_threads)]
 
     def evaluate(self, test_data=False, eval_model=None):
 
@@ -417,9 +307,7 @@ class Base_Server:
             true_pos[i] = cf_matrix[i, i].astype(np.float64)
             false_pos[i] = (cf_matrix[:, i].sum() - true_pos[i]).astype(np.float64)
             false_neg[i] = (cf_matrix[i, :].sum() - true_pos[i]).astype(np.float64)
-            true_neg[i] = (
-                cf_matrix.sum().sum() - true_pos[i] - false_pos[i] - false_neg[i]
-            ).astype(np.float64)
+            true_neg[i] = (cf_matrix.sum().sum() - true_pos[i] - false_pos[i] - false_neg[i]).astype(np.float64)
 
         tot = len(data_loader.dataset)
         # what fraction of positive predictions were indeed positive labels

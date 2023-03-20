@@ -1,40 +1,37 @@
 import torch
+
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = (
+    False  # prevent cuda from optimizing convolutional methods
+)
+
+import toml
 import numpy as np
 import random
 from dotmap import DotMap
-
-import data_preprocessing.data_loader as dl
-from models.resnet import resnet56, resnet18
 import copy
-
-from models.logistic_regression import logistic_regression
-from defence.group_test import Group_Test
-
 from torch.multiprocessing import set_start_method, Queue
 import logging
-
-import os
 from collections import defaultdict
 import time
-
-import numpy as np
-
-import matplotlib.pyplot as plt
-from data_preprocessing.data_poisoning import flip_label, random_labels, permute_labels
-
 import json
 from itertools import product
-
-# methods
-import methods.fedavg as fedavg
-import methods.fedsgd as fedsgd
-
 # https://stackoverflow.com/questions/6974695/python-process-pool-non-daemonic#:~:text=As%20of%20Python,answer%20by%20jfs
 from concurrent.futures import ProcessPoolExecutor as Pool
 
+# methods
+import data_preprocessing.data_loader as dl
+import methods.fedavg as fedavg
+from models.logistic_regression import logistic_regression
+from data_preprocessing.data_poisoning import flip_label, random_labels, permute_labels
+from models.resnet import resnet56, resnet18
+from models.convnet import convnetwork
+from defence.group_test import Group_Test
+
+
 # Helper Functions
 def init_process(q, Client):
-    # set_random_seed()
+    set_random_seed()
     global client
     ci = q.get()
     client = Client(ci[0], ci[1])
@@ -48,14 +45,14 @@ def run_clients(received_info):
         return None
 
 
-def allocate_clients_to_threads(args):
+def allocate_clients_to_threads(n_rounds, n_threads, n_clients):
     mapping_dict = defaultdict(list)
-    for round in range(args.comm_round):
+    for round in range(n_rounds):
 
-        num_clients = args.client_number
+        num_clients = n_clients
         client_list = list(range(num_clients))
         if num_clients > 0:
-            idxs = [[] for i in range(args.thread_number)]
+            idxs = [[] for i in range(n_threads)]
             remaining_clients = num_clients
             thread_idx = 0
             client_idx = 0
@@ -63,7 +60,7 @@ def allocate_clients_to_threads(args):
                 idxs[thread_idx].extend([client_idx])
 
                 remaining_clients -= 1
-                thread_idx = (thread_idx + 1) % args.thread_number
+                thread_idx = (thread_idx + 1) % n_threads
                 client_idx += 1
             for c, l in enumerate(idxs):
                 mapping_dict[c].append(l)
@@ -79,132 +76,89 @@ def set_random_seed(seed=1):
     torch.cuda.manual_seed_all(seed)
     ## NOTE: If you want every run to be exactly the same each time
     ##       uncomment the following lines
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+    # torch.use_deterministic_algorithms(True) # only use deterministic algorithms
 
 
 if __name__ == "__main__":
 
-    args = DotMap()
+    cfg_path = "./cfg_files/cfg_cifar.toml"
 
-    args.pretrained = False
-    args.client_sample = 1.0
-    args.thread_number = 8
-    args.val_size = 3000
-    args.method = "fedavg"  # fedavg, fedsgd
-    args.data_dir = (
-        "data/mnist"  # data/cifar100, data/cifar10, data/mnist, data/fashionmnist
-    )
-    args.partition_method = "homo"  # homo, hetero
-    args.client_number = 15
-
-    if args.client_number == 15:
-        num_tests = 8
-    elif args.client_number == 31:
-        num_tests = 10
-
-    if "cifar" in args.data_dir:
-        args.lr = 0.05
-        args.momentum = 0.9
-        args.wd = 0.001
-        args.comm_round = 50
-        args.group_test_round = 4
-        epochs_list = [5]
-        batch_size_list = [128]
-        num_classes = 10
-
-    else:
-        args.lr = 0.01
-        args.momentum = 0
-        args.wd = 0
-        args.comm_round = 10
-        args.group_test_round = 0
-        epochs_list = [1]
-        batch_size_list = [64]
-        num_classes = 10
-
-    # 0: no defence (keep the malicous nodes), 1: oracle (remove all malicious nodes), 2: group testing
-    MODE_list = [2]
-
-    attack_list = [2]  # 0: permutation attack, 1: random labels, 2: 1->7 label flip
-
-    total_MC_it = 10
-    threshold_vec = np.arange(0.1, 1, 0.1).tolist()
+    with open(cfg_path, "r") as file:
+        cfg = DotMap(toml.load(file))
+    
     sim_result = {}
-    # Set hyper parameters to sweep
-    if args.partition_method == "homo":
-        alpha_list = [np.inf]
-    else:
-        alpha_list = [0.5]
 
-    n_malicious_list = [3]
+    sim_params = list(product(
+            cfg.Data.alpha_list,
+            cfg.ML.epochs_list,
+            cfg.Sim.n_malicious_list,
+            cfg.ML.batch_size_list,
+            cfg.GT.crossover_probability_list,
+            cfg.GT.prevalence_list,
+            cfg.Sim.MODE_list,
+            cfg.Sim.attack_list)
+            )
 
-    sim_params = list(
-        product(
-            alpha_list,
-            epochs_list,
-            n_malicious_list,
-            batch_size_list,
-            MODE_list,
-            attack_list,
-        )
-    )
-
-    for (alpha, epochs, n_malicious, batch_size, MODE, ATTACK) in sim_params:
+    for (
+        alpha,
+        epochs,
+        n_malicious,
+        batch_size,
+        crossover_probability,
+        prevalence,
+        MODE,
+        ATTACK,
+    ) in sim_params:
+        
+        threshold_vec = np.arange(
+            cfg.GT.BCJR_min_threshold,
+            cfg.GT.BCJR_max_threshold,
+            cfg.GT.BCJR_step_threshold,
+        ).tolist()
+        
+        noiseless_gt = True if MODE == 3 else False
+        no_defence = True if MODE == 0 else False
+        oracle = True if MODE == 1 else False
 
         # No need to loop over thresholds if we dont do group testing
-        if MODE < 2:
+        if oracle or no_defence:
             threshold_vec = [np.inf]
 
         # prepare to store results
         sim_result["epochs"] = epochs
-        sim_result["group_test_round"] = args.group_test_round
+        sim_result["val_size"] = cfg.Data.val_size
+        sim_result["test_threshold"] = cfg.GT.test_threshold
+        sim_result["group_test_round"] = cfg.GT.group_test_round
         sim_result["batch_size"] = batch_size
         sim_result["alpha"] = alpha
         sim_result["n_malicious"] = n_malicious
-        sim_result["data_dir"] = args.data_dir
-        sim_result["lr"] = args.lr
-        sim_result["wd"] = args.wd
-        sim_result["momentum"] = args.momentum
-        sim_result["comm_round"] = args.comm_round
-        sim_result["client_number"] = args.client_number
-        sim_result["total_MC_it"] = total_MC_it
+        sim_result["data_dir"] = cfg.Data.data_dir
+        sim_result["lr"] = cfg.ML.lr
+        sim_result["wd"] = cfg.ML.wd
+        sim_result["momentum"] = cfg.ML.momentum
+        sim_result["comm_round"] = cfg.ML.communication_rounds
+        sim_result["client_number"] = cfg.Sim.n_clients
+        sim_result["total_MC_it"] = cfg.Sim.total_MC_it
         sim_result["threshold_vec"] = threshold_vec
-        sim_result["group_acc"] = np.zeros((len(threshold_vec), total_MC_it, num_tests))
-        sim_result["group_prec"] = np.zeros(
-            (len(threshold_vec), total_MC_it, num_tests, num_classes)
+        sim_result["group_acc"] = np.zeros(
+            (len(threshold_vec), cfg.Sim.total_MC_it, cfg.GT.n_tests)
         )
-        sim_result["group_recall"] = np.zeros(
-            (len(threshold_vec), total_MC_it, num_tests, num_classes)
-        )
-        sim_result["group_f1"] = np.zeros(
-            (len(threshold_vec), total_MC_it, num_tests, num_classes)
-        )
-        sim_result["bsc_channel"] = np.zeros((len(threshold_vec), total_MC_it, 2, 2))
-        sim_result["malicious_clients"] = np.zeros(
-            (len(threshold_vec), total_MC_it, args.client_number)
-        )
-        sim_result["DEC"] = np.zeros(
-            (len(threshold_vec), total_MC_it, args.client_number)
-        )
-        sim_result["syndrome"] = np.zeros((len(threshold_vec), total_MC_it, num_tests))
-        sim_result["accuracy"] = np.zeros(
-            (len(threshold_vec), total_MC_it, args.comm_round)
-        )
-        sim_result["cf_matrix"] = np.zeros(
-            (len(threshold_vec), total_MC_it, args.comm_round, num_classes, num_classes)
-        )
-
-        args.partition_alpha = alpha
-        args.epochs = epochs
-        args.batch_size = batch_size
+        sim_result["group_prec"] = np.zeros((len(threshold_vec),cfg.Sim.total_MC_it,cfg.GT.n_tests,cfg.Data.n_classes,))
+        sim_result["group_recall"] = np.zeros((len(threshold_vec),cfg.Sim.total_MC_it,cfg.GT.n_tests,cfg.Data.n_classes,))
+        sim_result["group_f1"] = np.zeros((len(threshold_vec),cfg.Sim.total_MC_it,cfg.GT.n_tests,cfg.Data.n_classes,))
+        sim_result["bsc_channel"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, 2, 2))
+        sim_result["malicious_clients"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, cfg.Sim.n_clients))
+        sim_result["DEC"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, cfg.Sim.n_clients))
+        sim_result["syndrome"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, cfg.GT.n_tests))
+        sim_result["accuracy"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, cfg.ML.communication_rounds))
+        sim_result["cf_matrix"] = np.zeros((len(threshold_vec),cfg.Sim.total_MC_it,cfg.ML.communication_rounds,cfg.Data.n_classes,cfg.Data.n_classes,))
 
         try:
             set_start_method("spawn")
         except RuntimeError:
             pass
 
-        accuracy = np.zeros((len(threshold_vec), total_MC_it, args.comm_round))
+        accuracy = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, cfg.ML.communication_rounds))
         P_FA = np.zeros(len(threshold_vec))
         P_MD = np.zeros(len(threshold_vec))
 
@@ -212,34 +166,35 @@ if __name__ == "__main__":
             logging.info("Starting with threshold_dec : {}".format(threshold_dec))
             FA = 0
             MD = 0
-            set_random_seed()  # all mc iterations should have same seed for each threshold value
+            
 
-            for monte_carlo_iterr in range(total_MC_it):
-
+            for monte_carlo_iterr in range(cfg.Sim.total_MC_it):
+                set_random_seed(monte_carlo_iterr)  # all mc iterations should have same seed for each threshold value
                 # -----------------------------------------
                 #           Create attacks
                 # -----------------------------------------
-                malicious_clients = np.random.permutation(args.client_number)
+                malicious_clients = np.random.permutation(cfg.Sim.n_clients)
                 malicious_clients = malicious_clients[:n_malicious].tolist()
-                defective = np.zeros((1, args.client_number), dtype=np.uint8)
+                defective = np.zeros((1, cfg.Sim.n_clients), dtype=np.uint8)
                 defective[:, malicious_clients] = 1
-                attacks = list_of_lists = [[] for i in range(args.client_number)]
-                for client in range(args.client_number):
+                attacks = list_of_lists = [[] for i in range(cfg.Sim.n_clients)]
+                for client in range(cfg.Sim.n_clients):
                     if client in malicious_clients:
                         if ATTACK == 0:
                             attacks[client].append((permute_labels,))
                         elif ATTACK == 1:
                             attacks[client].append((random_labels,))
                         elif ATTACK == 2:
-                            src = 1
-                            target = 7
-                            # label_flips = [(1, 7)]
+                            if "mnist" in cfg.Data.data_dir:
+                                src = 1
+                                target = 7
+                            elif "cifar10" in cfg.Data.data_dir:
+                                src = 7
+                                target = 4
                             label_flips = [(src, target)]
                             attacks[client].append((flip_label, label_flips))
 
-                sim_result["malicious_clients"][
-                    thres_indx, monte_carlo_iterr, :
-                ] = np.array(defective)
+                sim_result["malicious_clients"][thres_indx, monte_carlo_iterr, :] = np.array(defective)
                 # -----------------------------------------
                 # Obtain dataset for server and the clients
                 # -----------------------------------------
@@ -252,21 +207,22 @@ if __name__ == "__main__":
                     train_data_local_dict,
                     class_num,
                 ) = dl.load_partition_data(
-                    args.data_dir,
-                    args.partition_method,
-                    args.partition_alpha,
-                    args.client_number,
-                    args.batch_size,
+                    cfg.Data.data_dir,
+                    cfg.Data.partition_method,
+                    alpha,
+                    cfg.Sim.n_clients,
+                    batch_size,
                     attacks,
-                    args.val_size,
+                    cfg.Data.val_size,
                 )
 
                 # -----------------------------------------
                 #         Choose Model and FL protocol
                 # -----------------------------------------
-                if "cifar" in args.data_dir:
-                    Model = resnet18
-                elif "mnist" in args.data_dir:
+                if "cifar" in cfg.Data.data_dir:
+                    # Model = resnet18
+                    Model = convnetwork
+                elif "mnist" in cfg.Data.data_dir:
                     Model = logistic_regression
 
                 # Pick FL method
@@ -280,27 +236,21 @@ if __name__ == "__main__":
                     "val_data": server_val_dl,
                     "test_data": server_test_dl,
                     "model_type": Model,
-                    "num_classes": class_num,
+                    "num_classes": cfg.Data.n_classes,
                 }
+                server_args = DotMap()
+                server_args.n_threads = cfg.Sim.n_threads
 
-                # init server
-                # server_dict["save_path"] = "{}/logs/{}__{}_e{}_c{}".format(
-                #    os.getcwd(),
-                #    time.strftime("%Y%m%d_%H%M%S"),
-                #    args.method,
-                #    args.epochs,
-                #    args.client_number,
-                # )
-                # if not os.path.exists(server_dict["save_path"]):
-                #     os.makedirs(server_dict["save_path"])
-                server = Server(server_dict, args)
+                server = Server(server_dict, server_args)
                 # get global model to start from
                 server_outputs = server.start()
 
                 # -----------------------------------------
                 #               Setup Clients
                 # -----------------------------------------
-                mapping_dict = allocate_clients_to_threads(args)
+                mapping_dict = allocate_clients_to_threads(
+                    cfg.ML.communication_rounds, cfg.Sim.n_threads, cfg.Sim.n_clients
+                )
                 client_dict = [
                     {
                         "train_data": [
@@ -311,123 +261,109 @@ if __name__ == "__main__":
                         else "cpu",
                         "client_map": mapping_dict[i],
                         "model_type": Model,
-                        "num_classes": class_num,
+                        "num_classes": cfg.Data.n_classes,
                     }
-                    for i in range(args.thread_number)
+                    for i in range(cfg.Sim.n_threads)
                 ]
                 # init nodes
+                client_args = DotMap()
+                client_args.epochs = epochs
+                client_args.batch_size = batch_size
+                client_args.lr = cfg.ML.lr
+                client_args.momentum = cfg.ML.momentum
+                client_args.wd = cfg.ML.wd
+                
                 client_info = Queue()
-                for i in range(args.thread_number):
-                    client_info.put((client_dict[i], args))
+                for i in range(cfg.Sim.n_threads):
+                    client_info.put((client_dict[i], client_args))
 
                 # -----------------------------------------
                 #          Make Group Test Object
                 # -----------------------------------------
-                prevalence = n_malicious / args.client_number
-                if MODE != 3:
+                if not (oracle or no_defence):
+                    
+                    P_FA_test = 1e-6 if noiseless_gt else cfg.GT.P_FA
+                    P_MD_test = 1e-6 if noiseless_gt else cfg.GT.P_MD
+                    
                     gt = Group_Test(
-                        args.client_number,
+                        cfg.Sim.n_clients,
                         prevalence,
                         threshold_dec,
                         min_acc=0,
-                        threshold_from_max_acc=0.99,
-                        P_FA_test=0.05,
-                        P_MD_test=0.05,
+                        threshold_from_max_acc=cfg.GT.test_threshold,
+                        P_FA_test=P_FA_test,
+                        P_MD_test=P_MD_test,
                     )
-                else:
-                    # Noiseless group testing! #
-                    gt = Group_Test(
-                        args.client_number,
-                        prevalence,
-                        threshold_dec,
-                        min_acc=0,
-                        threshold_from_max_acc=0.99,
-                        P_FA_test=1e-6,
-                        P_MD_test=1e-6,
-                    )
-                sim_result["bsc_channel"][
-                    thres_indx, monte_carlo_iterr, :, :
-                ] = gt.ChannelMatrix
-
-                syndrome = np.matmul(defective, gt.parity_check_matrix.transpose())
+                    sim_result["bsc_channel"][thres_indx, monte_carlo_iterr, :, :] = gt.ChannelMatrix
+                    syndrome = np.matmul(defective, gt.parity_check_matrix.transpose())
 
                 # -----------------------------------------
                 #            Main Loop
                 # -----------------------------------------
                 # each thread will create a client object containing the client information
-                acc = np.zeros((1, args.comm_round))
+                acc = np.zeros((1, cfg.ML.communication_rounds))
                 all_class_malicious = False
                 with Pool(
-                    max_workers=args.thread_number,
+                    max_workers=cfg.Sim.n_threads,
                     initializer=init_process,
                     initargs=(client_info, Client),
                 ) as pool:
-                    for r in range(args.comm_round):
-                        logging.info(
-                            f"************** Round: {r}, MC-Iteration: {monte_carlo_iterr}  ***************"
-                        )
+                    for r in range(cfg.ML.communication_rounds):
                         round_start = time.time()
 
                         # -----------------------------------------
                         #         Perform local training
                         # -----------------------------------------
                         client_outputs = pool.map(run_clients, server_outputs)
-                        client_outputs = [
-                            c for sublist in client_outputs for c in sublist
-                        ]
+                        client_outputs = [c for sublist in client_outputs for c in sublist]
                         client_outputs.sort(key=lambda tup: tup["client_index"])
 
-                        if MODE == 0:
+                        if no_defence:
+                            # if no defence, keep all clients
                             clients_to_aggregate = client_outputs
-
-                        elif MODE == 1:
+                        
+                        elif oracle:
+                            # if oracle, only keep benign clients
                             clients_to_aggregate = []
-                            for i in range(args.client_number):
+                            for i in range(cfg.Sim.n_clients):
                                 if i not in malicious_clients:
                                     clients_to_aggregate.append(client_outputs[i])
-
-                        elif MODE == 2:
+                        else:
                             # -----------------------------------------
                             #           Group Testing
                             # -----------------------------------------
-                            if r < args.group_test_round:
-                                DEC = np.zeros((1, args.client_number), dtype=np.uint8)
-                            elif r == args.group_test_round:
+                            if r < cfg.GT.group_test_round:
+                                DEC = np.zeros((1, cfg.Sim.n_clients), dtype=np.uint8)
+                            elif r == cfg.GT.group_test_round:
                                 (
                                     group_accuracies,
                                     prec,
                                     rec,
                                     f1,
                                 ) = gt.get_group_accuracies(client_outputs, server)
-                                if ATTACK < 2:
+
+                                if noiseless_gt is True:
+                                    DEC = gt.noiseless_group_test(syndrome)
+                                else:
+                                    if ATTACK < 2:
+                                        DEC = gt.perform_group_test(group_accuracies)
+                                    elif ATTACK == 2:
+                                        DEC = gt.perform_group_test(rec[:, src])
+
                                     DEC = gt.perform_group_test(group_accuracies)
-                                elif ATTACK == 2:
-                                    DEC = gt.perform_group_test(rec[:, src])
                                 MD = MD + np.sum(gt.DEC[defective == 1] == 0)
                                 FA = FA + np.sum(gt.DEC[defective == 0] == 1)
                                 if (
                                     np.sum(DEC) == DEC.shape[1]
                                 ):  # , "All are classified as malicious"
                                     all_class_malicious = True
-
-                                sim_result["group_acc"][
-                                    thres_indx, monte_carlo_iterr, :
-                                ] = group_accuracies
-                                sim_result["group_prec"][
-                                    thres_indx, monte_carlo_iterr, :, :
-                                ] = prec
-                                sim_result["group_recall"][
-                                    thres_indx, monte_carlo_iterr, :, :
-                                ] = rec
-                                sim_result["group_f1"][
-                                    thres_indx, monte_carlo_iterr, :, :
-                                ] = f1
-                                sim_result["DEC"][
-                                    thres_indx, monte_carlo_iterr, :
-                                ] = DEC
-                                sim_result["syndrome"][
-                                    thres_indx, monte_carlo_iterr
-                                ] = syndrome[0]
+                                    
+                                sim_result["group_acc"][thres_indx, monte_carlo_iterr, :] = group_accuracies
+                                sim_result["group_prec"][thres_indx, monte_carlo_iterr, :, :] = prec
+                                sim_result["group_recall"][thres_indx, monte_carlo_iterr, :, :] = rec
+                                sim_result["group_f1"][thres_indx, monte_carlo_iterr, :, :] = f1
+                                sim_result["DEC"][thres_indx, monte_carlo_iterr, :] = DEC
+                                sim_result["syndrome"][thres_indx, monte_carlo_iterr] = syndrome[0]
                             # -----------------------------------------
                             #               Aggregation
                             # -----------------------------------------
@@ -437,49 +373,9 @@ if __name__ == "__main__":
                             else:
                                 clients_to_aggregate = [
                                     client_outputs[client_idx]
-                                    for client_idx in range(args.client_number)
+                                    for client_idx in range(cfg.Sim.n_clients)
                                     if DEC[:, client_idx] == 0
                                 ]
-
-                        elif MODE == 3:
-                            # -----------------------------------------
-                            #         Noiseless Group Testing
-                            # -----------------------------------------
-                            if r < args.group_test_round:
-                                DEC = np.zeros((1, args.client_number), dtype=np.uint8)
-                            elif r == args.group_test_round:
-                                (
-                                    group_accuracies,
-                                    prec,
-                                    rec,
-                                    f1,
-                                ) = gt.get_group_accuracies(client_outputs, server)
-                                DEC = gt.noiseless_group_test(syndrome)
-                                MD = MD + np.sum(gt.DEC[defective == 1] == 0)
-                                FA = FA + np.sum(gt.DEC[defective == 0] == 1)
-                                if (
-                                    np.sum(DEC) == DEC.shape[1]
-                                ):  # , "All are classified as malicious"
-                                    all_class_malicious = True
-
-                                sim_result["group_acc"][
-                                    thres_indx, monte_carlo_iterr, :
-                                ] = group_accuracies
-                                sim_result["group_prec"][
-                                    thres_indx, monte_carlo_iterr, :, :
-                                ] = prec
-                                sim_result["group_recall"][
-                                    thres_indx, monte_carlo_iterr, :, :
-                                ] = rec
-                                sim_result["group_f1"][
-                                    thres_indx, monte_carlo_iterr, :, :
-                                ] = f1
-                                sim_result["DEC"][
-                                    thres_indx, monte_carlo_iterr, :
-                                ] = DEC
-                                sim_result["syndrome"][
-                                    thres_indx, monte_carlo_iterr
-                                ] = syndrome[0]
                             # -----------------------------------------
                             #               Aggregation
                             # -----------------------------------------
@@ -489,7 +385,7 @@ if __name__ == "__main__":
                             else:
                                 clients_to_aggregate = [
                                     client_outputs[client_idx]
-                                    for client_idx in range(args.client_number)
+                                    for client_idx in range(cfg.Sim.n_clients)
                                     if DEC[:, client_idx] == 0
                                 ]
                         server_outputs, acc[0, r], cf_matrix = server.run(
@@ -501,14 +397,15 @@ if __name__ == "__main__":
                         ] = cf_matrix
 
                         round_end = time.time()
-                        logging.info(f"Round {r} Time: {round_end - round_start}")
-
-                        logging.info(f"************* Acc = {acc[0,r]} **************")
+                        logging.info(f"Threshold: {threshold_dec} --- MC-Iteration: {monte_carlo_iterr} --- Round {r} ---  Time: {round_end - round_start} --- Accuracy: {acc[0,r]}")
 
                     accuracy[thres_indx, monte_carlo_iterr, :] = acc
 
-            P_MD[thres_indx] = MD / (n_malicious * total_MC_it)
-            P_FA[thres_indx] = FA / ((args.client_number - n_malicious) * total_MC_it)
+            if n_malicious > 0:
+                P_MD[thres_indx] = MD / (n_malicious * cfg.Sim.total_MC_it)
+            P_FA[thres_indx] = FA / (
+                (cfg.Sim.n_clients - n_malicious) * cfg.Sim.total_MC_it
+            )
 
             # make all nparrays JSON serializable
             checkpoint_dict = copy.deepcopy(sim_result)
@@ -523,16 +420,14 @@ if __name__ == "__main__":
             checkpoint_dict["cf_matrix"] = checkpoint_dict["cf_matrix"].tolist()
             checkpoint_dict["DEC"] = checkpoint_dict["DEC"].tolist()
             checkpoint_dict["syndrome"] = checkpoint_dict["syndrome"].tolist()
-            checkpoint_dict["malicious_clients"] = checkpoint_dict[
-                "malicious_clients"
-            ].tolist()
+            checkpoint_dict["malicious_clients"] = checkpoint_dict["malicious_clients"].tolist()
             checkpoint_dict["bsc_channel"] = checkpoint_dict["bsc_channel"].tolist()
 
-            if "mnist" in args.data_dir:
+            if "mnist" in cfg.Data.data_dir:
                 prefix = "./results/MNIST_"
-            elif "cifar" in args.data_dir:
+            elif "cifar" in cfg.Data.data_dir:
                 prefix = "./results/CIFAR10_"
-            suffix = f"m-{n_malicious},{args.client_number}_e-{args.epochs}_bs-{args.batch_size}_alpha-{args.partition_alpha}_totalMC-{total_MC_it}_MODE-{MODE}_att-{ATTACK}.txt"
+            suffix = f"m-{n_malicious},{cfg.Sim.n_clients}_e-{epochs}_bs-{batch_size}_alpha-{alpha}_totalMC-{cfg.Sim.total_MC_it}_MODE-{MODE}_att-{ATTACK}_p_{crossover_probability}.txt"
             sim_title = prefix + suffix
 
             with open(sim_title, "w") as convert_file:

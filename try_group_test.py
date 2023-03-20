@@ -22,9 +22,7 @@ r = 3
 N = 6
 
 # Inputs
-H = np.array(
-    [[1, 1, 0, 1, 0, 0], [0, 1, 1, 0, 1, 0], [1, 0, 1, 0, 0, 1]], dtype=np.uint8
-)
+H = np.array([[1, 1, 0, 1, 0, 0], [0, 1, 1, 0, 1, 0], [1, 0, 1, 0, 0, 1]], dtype=np.uint8)
 LLRi = 1.19 * np.ones((1, N), dtype=np.double)
 test_vec = np.array([[0, 0, 1]], dtype=np.uint8)
 ChannelMatrix = np.array([[0.85, 0.15], [0.1, 0.9]], dtype=np.double)

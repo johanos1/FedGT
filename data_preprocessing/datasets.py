@@ -64,13 +64,9 @@ class Data_Manager:
 
         num_data = len(dataset)
         # Split into validation and training data
-        self.train_dataset, self.valid_dataset = random_split(
-            dataset, [num_data - self.val_size, self.val_size]
-        )
+        self.train_dataset, self.valid_dataset = random_split(dataset, [num_data - self.val_size, self.val_size])
 
-        self.test_dataset = dataObj(
-            self.root, train=False, transform=self.val_transform, download=True
-        )
+        self.test_dataset = dataObj(self.root, train=False, transform=self.val_transform, download=True)
 
     def get_client_dl(self, dataidxs, attacks=None):
         client_ds = Custom_Dataset(
@@ -91,6 +87,9 @@ class Data_Manager:
                 else:
                     client_ds = f_attack(client_ds)
 
+        def _init_fn():
+            np.random.seed(12)
+
         client_dl = DataLoader(client_ds, batch_size=self.train_bs)
         return client_dl
 
@@ -98,9 +97,7 @@ class Data_Manager:
         if self.is_mnist:
             return self.train_dataset.dataset.targets[self.train_dataset.indices]
         else:
-            return np.array(self.train_dataset.dataset.targets)[
-                self.train_dataset.indices
-            ]
+            return np.array(self.train_dataset.dataset.targets)[self.train_dataset.indices]
 
     def get_validation_dl(self):
         val_ds = Custom_Dataset(
@@ -110,27 +107,30 @@ class Data_Manager:
             self.val_transform,
             self.is_mnist,
         )
+
+        def _init_fn():
+            np.random.seed(12)
+
         val_dl = DataLoader(val_ds, batch_size=self.train_bs)
         return val_dl
 
     def get_test_dl(self):
+        def _init_fn():
+            np.random.seed(12)
+
         test_dl = DataLoader(self.test_dataset, batch_size=self.test_bs)
         return test_dl
 
 
 class Custom_Dataset(Dataset):
-    def __init__(
-        self, dataset, train_val_data_idx, dataidxs, transform=None, is_mnist=False
-    ):
+    def __init__(self, dataset, train_val_data_idx, dataidxs, transform=None, is_mnist=False):
         self.data = dataset.dataset.data[train_val_data_idx][dataidxs]
         self.transform = transform
         self.is_mnist = is_mnist
         if self.is_mnist:
             self.target = dataset.dataset.targets[train_val_data_idx][dataidxs]
         else:
-            self.target = np.array(dataset.dataset.targets)[train_val_data_idx][
-                dataidxs
-            ]
+            self.target = np.array(dataset.dataset.targets)[train_val_data_idx][dataidxs]
 
         self.transform = transform
 
