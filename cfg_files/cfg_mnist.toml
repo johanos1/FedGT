@@ -24,13 +24,13 @@ client_sample = 1.0
 lr = 0.01
 momentum = 0
 wd = 0
-communication_rounds = 10
+communication_rounds = 5
 epochs_list = [1]
 batch_size_list = [64]
 
 [GT]
 n_tests = 8
-group_test_round = 0
+group_test_round = 3
 test_threshold = 0.96 # GT threshold
 crossover_probability_list = [0.05]
 prevalence_list = [0.133]

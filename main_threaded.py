@@ -18,6 +18,7 @@ import json
 from itertools import product
 # https://stackoverflow.com/questions/6974695/python-process-pool-non-daemonic#:~:text=As%20of%20Python,answer%20by%20jfs
 from concurrent.futures import ProcessPoolExecutor as Pool
+import pickle
 
 # methods
 import data_preprocessing.data_loader as dl
@@ -43,7 +44,6 @@ def run_clients(received_info):
     except KeyboardInterrupt:
         logging.info("exiting")
         return None
-
 
 def allocate_clients_to_threads(n_rounds, n_threads, n_clients):
     mapping_dict = defaultdict(list)
@@ -78,14 +78,54 @@ def set_random_seed(seed=1):
     ##       uncomment the following lines
     # torch.use_deterministic_algorithms(True) # only use deterministic algorithms
 
+# If folder doesn't exist, create folder and store the model
+def save_model(server_model_statedict, mc_iteration):
+    import os
+    checkpoint_folder = "./checkpoint/"
+    cp_name = f"server-model_MC_{mc_iteration}"
+    
+    if not os.path.exists(checkpoint_folder):
+        os.makedirs(checkpoint_folder)
+    torch.save(server_model_statedict, checkpoint_folder + cp_name + ".pt")
+    
+    # store the random states
+    random_states = DotMap()
+    random_states.random_state = random.getstate()
+    random_states.np_random_state = np.random.get_state()
+    random_states.torch_random_state = torch.random.get_rng_state()
+    random_states.torch_cuda_random_state_all = torch.cuda.random.get_rng_state_all()
+    with open(checkpoint_folder + cp_name + "_random_states.pickle", 'wb') as handle:
+        pickle.dump(random_states, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    checkpoint_exists = True
+    return checkpoint_exists
+
+# load the server model right before GT
+def load_model(mc_iteration):
+    checkpoint_folder = "./checkpoint/"
+    cp_name = f"server-model_MC_{mc_iteration}"
+    server_model_statedict = torch.load(checkpoint_folder + f"/server-model_MC_{mc_iteration}.pt")
+    
+    # load pickled file and set random states as before checkpoint
+    with open(checkpoint_folder + cp_name + "_random_states.pickle", 'rb') as handle:
+        random_states = pickle.load(handle)
+        random.setstate(random_states.random_state)
+        np.random.set_state(random_states.np_random_state)
+        torch.set_rng_state(random_states.torch_random_state)
+        # loop through the devices and set the random states for each device 
+        for i in range(torch.cuda.device_count()):
+            torch.cuda.set_rng_state(random_states.torch_cuda_random_state_all[i], device=i)
+        
+    return server_model_statedict
 
 if __name__ == "__main__":
 
     cfg_path = "./cfg_files/cfg_cifar.toml"
-
     with open(cfg_path, "r") as file:
         cfg = DotMap(toml.load(file))
     
+    # keep track if checkpoint is stored for given MC iteration
+    checkpoint_exists = [False for x in range(cfg.Sim.total_MC_it)]
     sim_result = {}
 
     sim_params = list(product(
@@ -94,7 +134,6 @@ if __name__ == "__main__":
             cfg.Sim.n_malicious_list,
             cfg.ML.batch_size_list,
             cfg.GT.crossover_probability_list,
-            cfg.GT.prevalence_list,
             cfg.Sim.MODE_list,
             cfg.Sim.attack_list)
             )
@@ -105,7 +144,6 @@ if __name__ == "__main__":
         n_malicious,
         batch_size,
         crossover_probability,
-        prevalence,
         MODE,
         ATTACK,
     ) in sim_params:
@@ -120,6 +158,7 @@ if __name__ == "__main__":
         no_defence = True if MODE == 0 else False
         oracle = True if MODE == 1 else False
 
+        
         # No need to loop over thresholds if we dont do group testing
         if oracle or no_defence:
             threshold_vec = [np.inf]
@@ -140,9 +179,7 @@ if __name__ == "__main__":
         sim_result["client_number"] = cfg.Sim.n_clients
         sim_result["total_MC_it"] = cfg.Sim.total_MC_it
         sim_result["threshold_vec"] = threshold_vec
-        sim_result["group_acc"] = np.zeros(
-            (len(threshold_vec), cfg.Sim.total_MC_it, cfg.GT.n_tests)
-        )
+        sim_result["group_acc"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, cfg.GT.n_tests))
         sim_result["group_prec"] = np.zeros((len(threshold_vec),cfg.Sim.total_MC_it,cfg.GT.n_tests,cfg.Data.n_classes,))
         sim_result["group_recall"] = np.zeros((len(threshold_vec),cfg.Sim.total_MC_it,cfg.GT.n_tests,cfg.Data.n_classes,))
         sim_result["group_f1"] = np.zeros((len(threshold_vec),cfg.Sim.total_MC_it,cfg.GT.n_tests,cfg.Data.n_classes,))
@@ -242,8 +279,16 @@ if __name__ == "__main__":
                 server_args.n_threads = cfg.Sim.n_threads
 
                 server = Server(server_dict, server_args)
+                
                 # get global model to start from
-                server_outputs = server.start()
+                if not checkpoint_exists[monte_carlo_iterr]:
+                    server_outputs = server.start()
+                    start_round = 0
+                else:
+                    checkpoint_model_statedict = load_model(monte_carlo_iterr)
+                    server_outputs = [checkpoint_model_statedict for x in range(server.n_threads)]
+                    start_round = cfg.GT.group_test_round
+                    
 
                 # -----------------------------------------
                 #               Setup Clients
@@ -284,6 +329,7 @@ if __name__ == "__main__":
                     
                     P_FA_test = 1e-6 if noiseless_gt else cfg.GT.P_FA
                     P_MD_test = 1e-6 if noiseless_gt else cfg.GT.P_MD
+                    prevalence = n_malicious / cfg.Sim.n_clients 
                     
                     gt = Group_Test(
                         cfg.Sim.n_clients,
@@ -308,8 +354,12 @@ if __name__ == "__main__":
                     initializer=init_process,
                     initargs=(client_info, Client),
                 ) as pool:
-                    for r in range(cfg.ML.communication_rounds):
+                    for r in range(start_round, cfg.ML.communication_rounds):
                         round_start = time.time()
+                        
+                        # Store the server model before GT to be used in the other loops
+                        if (not checkpoint_exists[monte_carlo_iterr]) and (r == cfg.GT.group_test_round):
+                            checkpoint_exists[monte_carlo_iterr] = save_model(server_outputs[0], monte_carlo_iterr)
 
                         # -----------------------------------------
                         #         Perform local training
@@ -334,7 +384,7 @@ if __name__ == "__main__":
                             # -----------------------------------------
                             if r < cfg.GT.group_test_round:
                                 DEC = np.zeros((1, cfg.Sim.n_clients), dtype=np.uint8)
-                            elif r == cfg.GT.group_test_round:
+                            elif r == cfg.GT.group_test_round:  
                                 (
                                     group_accuracies,
                                     prec,
@@ -427,7 +477,7 @@ if __name__ == "__main__":
                 prefix = "./results/MNIST_"
             elif "cifar" in cfg.Data.data_dir:
                 prefix = "./results/CIFAR10_"
-            suffix = f"m-{n_malicious},{cfg.Sim.n_clients}_e-{epochs}_bs-{batch_size}_alpha-{alpha}_totalMC-{cfg.Sim.total_MC_it}_MODE-{MODE}_att-{ATTACK}_p_{crossover_probability}.txt"
+            suffix = f"m-{n_malicious},{cfg.Sim.n_clients}_e-{epochs}_bs-{batch_size}_alpha-{alpha}_totalMC-{cfg.Sim.total_MC_it}_MODE-{MODE}_att-{ATTACK}.txt"
             sim_title = prefix + suffix
 
             with open(sim_title, "w") as convert_file:
