@@ -82,7 +82,7 @@ def set_random_seed(seed=1):
 def save_model(server_model_statedict, mc_iteration):
     import os
     checkpoint_folder = "./checkpoint/"
-    cp_name = f"server-model_MC_{mc_iteration}"
+    cp_name = f"server-model_MC_{mc_iteration}_nm_{index_of_nm}"
     
     if not os.path.exists(checkpoint_folder):
         os.makedirs(checkpoint_folder)
@@ -101,10 +101,10 @@ def save_model(server_model_statedict, mc_iteration):
     return checkpoint_exists
 
 # load the server model right before GT
-def load_model(mc_iteration):
+def load_model(mc_iteration, index_of_nm):
     checkpoint_folder = "./checkpoint/"
     cp_name = f"server-model_MC_{mc_iteration}"
-    server_model_statedict = torch.load(checkpoint_folder + f"/server-model_MC_{mc_iteration}.pt")
+    server_model_statedict = torch.load(checkpoint_folder + f"/server-model_MC_{mc_iteration}_nm_{index_of_nm}.pt")
     
     # load pickled file and set random states as before checkpoint
     with open(checkpoint_folder + cp_name + "_random_states.pickle", 'rb') as handle:
@@ -282,11 +282,12 @@ if __name__ == "__main__":
                 server = Server(server_dict, server_args)
                 
                 # get global model to start from
-                if not checkpoint_exists[monte_carlo_iterr]:
+                index_of_nm = cfg.Sim.n_malicious_list.index(n_malicious)
+                if not checkpoint_exists[index_of_nm][monte_carlo_iterr]:
                     server_outputs = server.start()
                     start_round = 0
-                elif checkpoint_exists[monte_carlo_iterr] and (oracle is False):
-                    checkpoint_model_statedict = load_model(monte_carlo_iterr)
+                elif checkpoint_exists[index_of_nm][monte_carlo_iterr] and (oracle is False):
+                    checkpoint_model_statedict = load_model(monte_carlo_iterr, index_of_nm)
                     server_outputs = [checkpoint_model_statedict for x in range(server.n_threads)]
                     start_round = cfg.GT.group_test_round
                     
@@ -359,8 +360,8 @@ if __name__ == "__main__":
                         round_start = time.time()
                         
                         # Store the server model before GT to be used in the other loops
-                        if (not checkpoint_exists[monte_carlo_iterr]) and (r == cfg.GT.group_test_round):
-                            checkpoint_exists[monte_carlo_iterr] = save_model(server_outputs[0], monte_carlo_iterr)
+                        if (not checkpoint_exists[index_of_nm][monte_carlo_iterr]) and (r == cfg.GT.group_test_round):
+                            checkpoint_exists[index_of_nm][monte_carlo_iterr] = save_model(server_outputs[0], monte_carlo_iterr, index_of_nm)
 
                         # -----------------------------------------
                         #         Perform local training
