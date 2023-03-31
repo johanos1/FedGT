@@ -284,7 +284,7 @@ if __name__ == "__main__":
                 if not checkpoint_exists[monte_carlo_iterr]:
                     server_outputs = server.start()
                     start_round = 0
-                else:
+                elif checkpoint_exists[monte_carlo_iterr] and (oracle is False):
                     checkpoint_model_statedict = load_model(monte_carlo_iterr)
                     server_outputs = [checkpoint_model_statedict for x in range(server.n_threads)]
                     start_round = cfg.GT.group_test_round
