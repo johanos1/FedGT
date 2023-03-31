@@ -125,7 +125,8 @@ if __name__ == "__main__":
         cfg = DotMap(toml.load(file))
     
     # keep track if checkpoint is stored for given MC iteration
-    checkpoint_exists = [False for x in range(cfg.Sim.total_MC_it)]
+    checkpoint_exists = [[False for x in range(cfg.Sim.total_MC_it)] for y in range(len(cfg.Sim.n_malicious_list))]
+    
     sim_result = {}
 
     sim_params = list(product(
