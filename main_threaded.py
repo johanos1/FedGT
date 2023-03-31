@@ -79,7 +79,7 @@ def set_random_seed(seed=1):
     # torch.use_deterministic_algorithms(True) # only use deterministic algorithms
 
 # If folder doesn't exist, create folder and store the model
-def save_model(server_model_statedict, mc_iteration):
+def save_model(server_model_statedict, mc_iteration, index_of_nm):
     import os
     checkpoint_folder = "./checkpoint/"
     cp_name = f"server-model_MC_{mc_iteration}_nm_{index_of_nm}"
