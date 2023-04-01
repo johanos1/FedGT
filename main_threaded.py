@@ -103,8 +103,8 @@ def save_model(server_model_statedict, mc_iteration, index_of_nm):
 # load the server model right before GT
 def load_model(mc_iteration, index_of_nm):
     checkpoint_folder = "./checkpoint/"
-    cp_name = f"server-model_MC_{mc_iteration}"
-    server_model_statedict = torch.load(checkpoint_folder + f"/server-model_MC_{mc_iteration}_nm_{index_of_nm}.pt")
+    cp_name = f"server-model_MC_{mc_iteration}_nm_{index_of_nm}"
+    server_model_statedict = torch.load(checkpoint_folder + cp_name + ".pt")
     
     # load pickled file and set random states as before checkpoint
     with open(checkpoint_folder + cp_name + "_random_states.pickle", 'rb') as handle:
@@ -286,7 +286,7 @@ if __name__ == "__main__":
                 if not checkpoint_exists[index_of_nm][monte_carlo_iterr]:
                     server_outputs = server.start()
                     start_round = 0
-                elif checkpoint_exists[index_of_nm][monte_carlo_iterr] and (oracle is False):
+                elif checkpoint_exists[index_of_nm][monte_carlo_iterr] and (not oracle):
                     checkpoint_model_statedict = load_model(monte_carlo_iterr, index_of_nm)
                     server_outputs = [checkpoint_model_statedict for x in range(server.n_threads)]
                     start_round = cfg.GT.group_test_round
@@ -360,7 +360,7 @@ if __name__ == "__main__":
                         round_start = time.time()
                         
                         # Store the server model before GT to be used in the other loops
-                        if (not checkpoint_exists[index_of_nm][monte_carlo_iterr]) and (r == cfg.GT.group_test_round):
+                        if (not checkpoint_exists[index_of_nm][monte_carlo_iterr]) and (r == cfg.GT.group_test_round) and (not oracle):
                             checkpoint_exists[index_of_nm][monte_carlo_iterr] = save_model(server_outputs[0], monte_carlo_iterr, index_of_nm)
 
                         # -----------------------------------------
