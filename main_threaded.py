@@ -387,16 +387,11 @@ if __name__ == "__main__":
                             if r < cfg.GT.group_test_round:
                                 DEC = np.zeros((1, cfg.Sim.n_clients), dtype=np.uint8)
                             elif r == cfg.GT.group_test_round:  
-                                (
-                                    group_accuracies,
-                                    prec,
-                                    rec,
-                                    f1,
-                                ) = gt.get_group_accuracies(client_outputs, server)
-
+                                
                                 if noiseless_gt is True:
                                     DEC = gt.noiseless_group_test(syndrome)
                                 else:
+                                    group_accuracies, prec, rec, f1 = gt.get_group_accuracies(client_outputs, server)
                                     if ATTACK < 2:
                                         DEC = gt.perform_group_test(group_accuracies)
                                     elif ATTACK == 2:
