@@ -129,12 +129,17 @@ if __name__ == "__main__":
     
     sim_result = {}
 
+    if cfg.manual is False:
+        assert len(cfg.GT.crossover_probability_list) == 1, "crossover_probability_list should be of length 1"
+        assert len(cfg.GT.prevalence_list) == 1, "prevalence_list should be of length 1"
+
     sim_params = list(product(
             cfg.Data.alpha_list,
             cfg.ML.epochs_list,
             cfg.Sim.n_malicious_list,
             cfg.ML.batch_size_list,
             cfg.GT.crossover_probability_list,
+            cfg.GT.prevalence_list,
             cfg.Sim.MODE_list,
             cfg.Sim.attack_list)
             )
@@ -145,6 +150,7 @@ if __name__ == "__main__":
         n_malicious,
         batch_size,
         crossover_probability,
+        prevalence_sim,
         MODE,
         ATTACK,
     ) in sim_params:
@@ -329,9 +335,14 @@ if __name__ == "__main__":
                 # -----------------------------------------
                 if not (oracle or no_defence):
                     
-                    P_FA_test = 1e-6 if noiseless_gt else cfg.GT.P_FA
-                    P_MD_test = 1e-6 if noiseless_gt else cfg.GT.P_MD
-                    prevalence = n_malicious / cfg.Sim.n_clients 
+                    if not cfg.manual_params:
+                        P_FA_test = 1e-6 if noiseless_gt else cfg.GT.P_FA
+                        P_MD_test = 1e-6 if noiseless_gt else cfg.GT.P_MD
+                        prevalence = n_malicious / cfg.Sim.n_clients 
+                    else:
+                        P_FA_test = crossover_probability
+                        P_MD_test = crossover_probability
+                        prevalence = prevalence_sim
                     
                     gt = Group_Test(
                         cfg.Sim.n_clients,

@@ -8,7 +8,7 @@ MODE_list = [0,1,2,3]
 # 0: permutation attack, 1: random labels, 2: 1->7 label flip
 attack_list = [0]
 total_MC_it = 5
-n_malicious_list = [1,2,3,4,5]
+n_malicious_list = [3]
 
 [Data]
 val_size = 100
@@ -31,14 +31,16 @@ batch_size_list = [128]
 
 [GT]
 n_tests = 8
-group_test_round = 10
+group_test_round = 5
 test_threshold = 0.96 # GT threshold
 crossover_probability_list = [0.05]
+prevalence_list = [0.2]
 P_FA = 0.05
 P_MD = 0.05
+manual_params = false
 # Decoding thresholds
 BCJR_min_threshold = 0.1
-BCJR_max_threshold = 0.9
+BCJR_max_threshold = 0.905
 BCJR_step_threshold = 0.1
 
 
