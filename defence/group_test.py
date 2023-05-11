@@ -10,6 +10,7 @@ class Group_Test:
     def __init__(
         self,
         n_clients,
+        n_tests,
         prevalence,
         threshold_dec,
         min_acc,
@@ -18,8 +19,10 @@ class Group_Test:
         P_FA_test,
     ):
         self.n_clients = n_clients
+        self.n_tests = n_tests
         self.parity_check_matrix = self._get_test_matrix()
-        self.n_tests = self.parity_check_matrix.shape[0]
+        assert self.n_tests == self.parity_check_matrix.shape[0], "Wrong no of rows in H!"
+        assert self.n_clients == self.parity_check_matrix.shape[1], "Wrong no of cols in H!"
         self.threshold_dec = threshold_dec
 
         # Set up the decoding algorithm based on C-code
@@ -56,19 +59,30 @@ class Group_Test:
     def _get_test_matrix(self):
         # fmt: off
         if self.n_clients == 15:
-            parity_check_matrix = np.array(
-                [
-                    [1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
-                    [0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
-                    [0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0],
-                    [0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0],
-                    [0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0],
-                    [0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0],
-                    [0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0],
-                    [0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1],
-                ],
-                dtype=np.uint8,
-            )
+            if self.n_tests == 8:
+                parity_check_matrix = np.array(
+                    [
+                        [1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+                        [0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+                        [0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+                        [0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0],
+                        [0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+                        [0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0],
+                        [0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0],
+                        [0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1],
+                    ],
+                    dtype=np.uint8,
+                )
+            if self.n_tests == 4:
+                parity_check_matrix = np.array(
+                    [
+                        [1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0],
+                        [0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0],
+                        [0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0],
+                        [0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1],
+                    ],
+                    dtype = np.uint8,
+                )
         elif self.n_clients == 31:
             parity_check_matrix = np.array(
                 [

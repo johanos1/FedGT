@@ -15,6 +15,7 @@ import logging
 from collections import defaultdict
 import time
 import json
+import subprocess
 from itertools import product
 # https://stackoverflow.com/questions/6974695/python-process-pool-non-daemonic#:~:text=As%20of%20Python,answer%20by%20jfs
 from concurrent.futures import ProcessPoolExecutor as Pool
@@ -468,3 +469,8 @@ if __name__ == "__main__":
 
             with open(sim_title, "w") as convert_file:
                 convert_file.write(json.dumps(checkpoint_dict))
+                
+        zgjimi = f"Mismatched: The simulation for {n_malicious} mal_nodes, prev {prevalence_sim} and cross_prop {crossover_probability} is done!" 
+        commando_uck = f'echo "{zgjimi}" | mail -s "Simulation done!" marvin.xhemrishi@tum.de'
+        coje = subprocess.call(commando_uck, shell = True)
+
