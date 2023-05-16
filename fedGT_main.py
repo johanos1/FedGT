@@ -166,10 +166,6 @@ if __name__ == "__main__":
                 src = 7
                 target = 4
         
-        #zgjimi = f"Mismatched: The simulation for {n_malicious} mal_nodes, prev {prevalence_sim} and cross_prop {crossover_probability} is done!" 
-        #commando_uck = f'echo "{zgjimi}" | mail -s "Simulation done!" marvin.xhemrishi@tum.de'
-        #coje = subprocess.call(commando_uck, shell = True)
-        
         threshold_vec = np.arange(
             cfg.GT.BCJR_min_threshold,
             cfg.GT.BCJR_max_threshold,
@@ -492,10 +488,3 @@ if __name__ == "__main__":
 
             with open(sim_title, "w") as convert_file:
                 convert_file.write(json.dumps(checkpoint_dict))
-        # if not prev_and_cross_sim:
-        #     zgjimi = f"The simulation for {n_malicious} mal_nodes out of {cfg.Sim.n_clients} clients, MODE {MODE} is done!"
-        # else:
-        #     zgjimi = f"Mismatched: The simulation for {n_malicious} mal_nodes, prev {prevalence_sim} and cross_prop {crossover_probability} is done!" 
-        # commando_uck = f'echo "{zgjimi}" | mail -s "Simulation done!" marvin.xhemrishi@tum.de'
-        # coje = subprocess.call(commando_uck, shell = True)
-
