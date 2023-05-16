@@ -19,3 +19,6 @@ The simulation is initiated by running
 ```bash
 python fedGT_main.py 
 ```
+
+## Credits
+This repository is to some extent inspired from FedML (https://github.com/FedML-AI/FedML).
