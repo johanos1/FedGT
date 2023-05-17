@@ -83,6 +83,18 @@ class Group_Test:
                     ],
                     dtype = np.uint8,
                 )
+            if self.n_tests == 6: 
+                parity_check_matrix = np.array(
+                    [
+                        [1, 1, 0, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0],
+                        [0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0],
+                        [0, 0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0],
+                        [0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 1, 0, 0],
+                        [0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 1, 0],
+                        [0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 1],
+                    ],
+                    dtype = np.uint8,
+                )
         elif self.n_clients == 31:
             parity_check_matrix = np.array(
                 [

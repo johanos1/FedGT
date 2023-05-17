@@ -1,4 +1,4 @@
-name: tum_chalmers
+name: fedGT
 channels:
   - conda-forge
   - defaults

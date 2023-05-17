@@ -1,4 +1,4 @@
-# TUM_Chalmers_AIswe
+# FedGT
 
 This repository includes the code for FedGT, a group-testing framework for identification of malicious clients in federated learning. 
 
