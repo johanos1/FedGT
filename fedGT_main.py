@@ -27,7 +27,6 @@ import methods.fedavg as fedavg
 from models.logistic_regression import logistic_regression
 from data_preprocessing.data_poisoning import flip_label, random_labels, permute_labels
 from models.resnet import resnet56, resnet18
-from models.convnet import convnetwork
 from defence.group_test import Group_Test
 
 
@@ -276,7 +275,6 @@ if __name__ == "__main__":
                 # -----------------------------------------
                 if "cifar" in cfg.Data.data_dir:
                     Model = resnet18
-                    #Model = convnetwork
                 elif "mnist" in cfg.Data.data_dir:
                     Model = logistic_regression
 
