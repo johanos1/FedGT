@@ -19,6 +19,11 @@ The simulation is initiated by running
 ```bash
 python fedGT_main.py 
 ```
+The results will be stored in a txt file (JSON format) inside the results folder. The image below is an example of a run for an untargeted attack.
+
+![alt text](https://github.com/johanos1/TUM_Chalmers_AIswe/blob/anonymous_branch/example_img.png?raw=true)
+
+
 
 ## Credits
 This repository is to some extent inspired from FedML (https://github.com/FedML-AI/FedML).
