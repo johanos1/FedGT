@@ -14,12 +14,15 @@ cc -fPIC -shared -o BCJR_4_python.so BCJR_4_python.c
 ```
 to create BCJR_4_python.so that will be called for decoding in the defence/group_test.py class.
 
+Create an empty folder called results, this is where the simulation will store the results as a txt file (JSON).
+
 To configure the simulation, use the toml file in cfg_files and set the path in the beginning of fedGT_main.py. The different modes supported are: Oracle, no-defence, fedGT, and noiseless fedGT. Furthermore, two types of data poisoning are supported: untargeted (label permutations) and targeted (replace the labels of a given class).
 The simulation is initiated by running 
 ```bash
 python fedGT_main.py 
 ```
-The results will be stored in a txt file (JSON format) inside the results folder. The image below is an example of a run for an untargeted attack.
+The image below is an example of a run for an untargeted attack.
+
 
 ![alt text](https://github.com/johanos1/TUM_Chalmers_AIswe/blob/anonymous_branch/example_img.png?raw=true)
 
