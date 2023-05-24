@@ -223,7 +223,7 @@ if __name__ == "__main__":
             
 
             for monte_carlo_iterr in range(cfg.Sim.total_MC_it):
-                set_random_seed(monte_carlo_iterr+5)  # all mc iterations should have same seed for each threshold value
+                set_random_seed(monte_carlo_iterr)  # all mc iterations should have same seed for each threshold value
                 # -----------------------------------------
                 #           Create attacks
                 # -----------------------------------------
