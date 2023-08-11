@@ -129,8 +129,10 @@ if __name__ == "__main__":
     checkpoint_exists = [[False for x in range(cfg.Sim.total_MC_it)] for y in range(len(cfg.Sim.n_malicious_list))]
     
     sim_result = {}
+    prev_and_cross_sim = cfg.GT.manual_params
+    logging.info(f"The value of prevalence simulation is {prev_and_cross_sim}")
 
-    if cfg.manual is False:
+    if not prev_and_cross_sim:
         assert len(cfg.GT.crossover_probability_list) == 1, "crossover_probability_list should be of length 1"
         assert len(cfg.GT.prevalence_list) == 1, "prevalence_list should be of length 1"
 
@@ -156,15 +158,35 @@ if __name__ == "__main__":
         ATTACK,
     ) in sim_params:
         
+        if ATTACK == 2 and n_malicious == 0 and MODE == 2:
+            if "mnist" in cfg.Data.data_dir:
+                src = 1
+                target = 7
+            elif "cifar10" in cfg.Data.data_dir:
+                src = 7
+                target = 4
+        
+        #zgjimi = f"Mismatched: The simulation for {n_malicious} mal_nodes, prev {prevalence_sim} and cross_prop {crossover_probability} is done!" 
+        #commando_uck = f'echo "{zgjimi}" | mail -s "Simulation done!" marvin.xhemrishi@tum.de'
+        #coje = subprocess.call(commando_uck, shell = True)
+        
         threshold_vec = np.arange(
             cfg.GT.BCJR_min_threshold,
             cfg.GT.BCJR_max_threshold,
             cfg.GT.BCJR_step_threshold,
         ).tolist()
-        
+
+        if cfg.Sim.PCA_simulation == True:
+            no_PCA_components = 4
+            sim_result["no_pca_comp"] = no_PCA_components
+            assert MODE == 2, "Only Mode 2 is supported for PCA sims!"
+            assert len(threshold_vec) == 1, "Only use one threshold please for PCA sims!"
+            assert cfg.GT.group_test_round > cfg.ML.communication_rounds, "GT round should be done later than Comm rounds for PCA sims!"
+
         noiseless_gt = True if MODE == 3 else False
         no_defence = True if MODE == 0 else False
         oracle = True if MODE == 1 else False
+        GM_aggregation = True if MODE == 4 else False
 
         
         # No need to loop over thresholds if we dont do group testing
@@ -197,6 +219,10 @@ if __name__ == "__main__":
         sim_result["syndrome"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, cfg.GT.n_tests))
         sim_result["accuracy"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, cfg.ML.communication_rounds))
         sim_result["cf_matrix"] = np.zeros((len(threshold_vec),cfg.Sim.total_MC_it,cfg.ML.communication_rounds,cfg.Data.n_classes,cfg.Data.n_classes,))
+        if cfg.Sim.PCA_simulation == True:
+            sim_result["cosine_similarity_per_label"] = np.zeros((cfg.Sim.total_MC_it,cfg.ML.communication_rounds,cfg.GT.n_tests,cfg.Data.n_classes))
+            sim_result["cosine_similarity_model"] = np.zeros((cfg.Sim.total_MC_it,cfg.ML.communication_rounds,cfg.GT.n_tests))
+            sim_result["PCA_components"] = np.zeros((cfg.Sim.total_MC_it,cfg.ML.communication_rounds,cfg.GT.n_tests,no_PCA_components))
 
         try:
             set_start_method("spawn")
@@ -211,8 +237,6 @@ if __name__ == "__main__":
             logging.info("Starting with threshold_dec : {}".format(threshold_dec))
             FA = 0
             MD = 0
-            
-
             for monte_carlo_iterr in range(cfg.Sim.total_MC_it):
                 set_random_seed(monte_carlo_iterr)  # all mc iterations should have same seed for each threshold value
                 # -----------------------------------------
@@ -265,8 +289,8 @@ if __name__ == "__main__":
                 #         Choose Model and FL protocol
                 # -----------------------------------------
                 if "cifar" in cfg.Data.data_dir:
-                    # Model = resnet18
-                    Model = convnetwork
+                    Model = resnet18
+                    #Model = convnetwork
                 elif "mnist" in cfg.Data.data_dir:
                     Model = logistic_regression
 
@@ -285,6 +309,7 @@ if __name__ == "__main__":
                 }
                 server_args = DotMap()
                 server_args.n_threads = cfg.Sim.n_threads
+                server_args.aggregation = "GM" if GM_aggregation == True else "Avg"
 
                 server = Server(server_dict, server_args)
                 
@@ -334,9 +359,8 @@ if __name__ == "__main__":
                 # -----------------------------------------
                 #          Make Group Test Object
                 # -----------------------------------------
-                if not (oracle or no_defence):
-                    
-                    if not cfg.manual_params:
+                if not (oracle or no_defence or GM_aggregation):
+                    if not prev_and_cross_sim:
                         P_FA_test = 1e-6 if noiseless_gt else cfg.GT.P_FA
                         P_MD_test = 1e-6 if noiseless_gt else cfg.GT.P_MD
                         prevalence = n_malicious / cfg.Sim.n_clients 
@@ -344,9 +368,10 @@ if __name__ == "__main__":
                         P_FA_test = crossover_probability
                         P_MD_test = crossover_probability
                         prevalence = prevalence_sim
-                    
+                        logging.info(f"I am choosing Mismatched for prev{prevalence} and P_FA_test {P_FA_test} and P_MD_test {P_MD_test}!")
                     gt = Group_Test(
                         cfg.Sim.n_clients,
+                        cfg.GT.n_tests,
                         prevalence,
                         threshold_dec,
                         min_acc=0,
@@ -363,6 +388,10 @@ if __name__ == "__main__":
                 # each thread will create a client object containing the client information
                 acc = np.zeros((1, cfg.ML.communication_rounds))
                 all_class_malicious = False
+                #if cfg.Sim.PCA_simulation == True:
+                #    sim_cos_labels = []
+                #    sim_cos_flattened = []
+                #    sim_pca = []
                 with Pool(
                     max_workers=cfg.Sim.n_threads,
                     initializer=init_process,
@@ -372,8 +401,8 @@ if __name__ == "__main__":
                         round_start = time.time()
                         
                         # Store the server model before GT to be used in the other loops
-                        if (not checkpoint_exists[index_of_nm][monte_carlo_iterr]) and (r == cfg.GT.group_test_round) and (not oracle):
-                            checkpoint_exists[index_of_nm][monte_carlo_iterr] = save_model(server_outputs[0], monte_carlo_iterr, index_of_nm)
+                        #if (not checkpoint_exists[index_of_nm][monte_carlo_iterr]) and (r == cfg.GT.group_test_round) and (not oracle):
+                        #    checkpoint_exists[index_of_nm][monte_carlo_iterr] = save_model(server_outputs[0], monte_carlo_iterr, index_of_nm)
 
                         # -----------------------------------------
                         #         Perform local training
@@ -386,6 +415,10 @@ if __name__ == "__main__":
                             # if no defence, keep all clients
                             clients_to_aggregate = client_outputs
                         
+                        if GM_aggregation:
+                            # if doing GM aggregation, keep all of them
+                            clients_to_aggregate = client_outputs
+        
                         elif oracle:
                             # if oracle, only keep benign clients
                             clients_to_aggregate = []
@@ -393,6 +426,15 @@ if __name__ == "__main__":
                                 if i not in malicious_clients:
                                     clients_to_aggregate.append(client_outputs[i])
                         else:
+                            # PCA and Cosine Similarity stuff
+                            if cfg.Sim.PCA_simulation == True:
+                                cos_sim, cos_sim_flatt, pca = gt.get_pca_components(client_outputs, server, no_PCA_components)
+                                sim_result["cosine_similarity_per_label"][monte_carlo_iterr, r, :,:] = cos_sim
+                                sim_result["cosine_similarity_model"][monte_carlo_iterr, r, :] = cos_sim_flatt
+                                sim_result["PCA_components"][monte_carlo_iterr, r, :, :] = pca
+                                #sim_cos_labels.append(cos_sim)
+                                #sim_cos_flattened.append(cos_sim_flatt)
+                                #sim_pca.append(pca)
                             # -----------------------------------------
                             #           Group Testing
                             # -----------------------------------------
@@ -401,6 +443,7 @@ if __name__ == "__main__":
                             elif r == cfg.GT.group_test_round:  
                                 
                                 if noiseless_gt is True:
+                                    group_accuracies, prec, rec, f1 = gt.get_group_accuracies(client_outputs, server)
                                     DEC = gt.noiseless_group_test(syndrome)
                                 else:
                                     group_accuracies, prec, rec, f1 = gt.get_group_accuracies(client_outputs, server)
@@ -436,7 +479,10 @@ if __name__ == "__main__":
                         sim_result["cf_matrix"][thres_indx, monte_carlo_iterr, r, :, :] = cf_matrix
 
                         round_end = time.time()
-                        logging.info(f"Threshold: {threshold_dec} --- MC-Iteration: {monte_carlo_iterr} --- Round {r} ---  Time: {round_end - round_start} --- Accuracy: {acc[0,r]}")
+                        if prev_and_cross_sim:
+                            logging.info(f"Threshold: {threshold_dec} --- n_mali: {n_malicious} --- MODE: {MODE} --- MC-Iteration: {monte_carlo_iterr} --- Round {r} ---  Time: {round_end - round_start} --- Accuracy: {acc[0,r]} --- prev: {prevalence_sim} --- cross_prop {crossover_probability}")
+                        else:
+                            logging.info(f"Threshold: {threshold_dec} --- n_mali: {n_malicious} --- MODE: {MODE} --- MC-Iteration: {monte_carlo_iterr} --- Round {r} ---  Time: {round_end - round_start} --- Accuracy: {acc[0,r]}")
 
                     accuracy[thres_indx, monte_carlo_iterr, :] = acc
 
@@ -459,18 +505,32 @@ if __name__ == "__main__":
             checkpoint_dict["syndrome"] = checkpoint_dict["syndrome"].tolist()
             checkpoint_dict["malicious_clients"] = checkpoint_dict["malicious_clients"].tolist()
             checkpoint_dict["bsc_channel"] = checkpoint_dict["bsc_channel"].tolist()
+            if cfg.Sim.PCA_simulation == True:
+                checkpoint_dict["cosine_similarity_per_label"] = checkpoint_dict["cosine_similarity_per_label"].tolist()
+                checkpoint_dict["cosine_similarity_model"] = checkpoint_dict["cosine_similarity_model"].tolist()
+                checkpoint_dict["PCA_components"] = checkpoint_dict["PCA_components"].tolist()
 
             if "mnist" in cfg.Data.data_dir:
                 prefix = "./results/MNIST_"
             elif "cifar" in cfg.Data.data_dir:
                 prefix = "./results/CIFAR10_"
-            suffix = f"m-{n_malicious},{cfg.Sim.n_clients}_e-{epochs}_bs-{batch_size}_alpha-{alpha}_totalMC-{cfg.Sim.total_MC_it}_MODE-{MODE}_att-{ATTACK}.txt"
+            if cfg.Sim.PCA_simulation == True:
+                if "mnist" in cfg.Data.data_dir:
+                    prefix = "./PCA_results/MNIST_"
+                elif "cifar" in cfg.Data.data_dir:
+                    prefix = "./PCA_results/CIFAR10_"
+            if not prev_and_cross_sim:
+                suffix = f"m-{n_malicious},{cfg.Sim.n_clients}_t-{cfg.GT.n_tests}_e-{epochs}_bs-{batch_size}_alpha-{alpha}_totalMC-{cfg.Sim.total_MC_it}_MODE-{MODE}_att-{ATTACK}.txt"
+            else:
+                suffix = f"m-{n_malicious},{cfg.Sim.n_clients}_t-{cfg.GT.n_tests}_e-{epochs}_bs-{batch_size}_alpha-{alpha}_totalMC-{cfg.Sim.total_MC_it}_MODE-{MODE}_prev-{prevalence_sim}_p-{crossover_probability}_att-{ATTACK}.txt"
             sim_title = prefix + suffix
 
             with open(sim_title, "w") as convert_file:
                 convert_file.write(json.dumps(checkpoint_dict))
-                
-        zgjimi = f"Mismatched: The simulation for {n_malicious} mal_nodes, prev {prevalence_sim} and cross_prop {crossover_probability} is done!" 
+        if not prev_and_cross_sim:
+            zgjimi = f"The simulation for dataset : {cfg_path[16:21]} for {n_malicious} mal_nodes out of {cfg.Sim.n_clients} clients, MODE {MODE}, ATTACK - {ATTACK}, with PCA - {cfg.Sim.PCA_simulation} is done!"
+        else:
+            zgjimi = f"Mismatched: The simulation for {n_malicious} mal_nodes, prev {prevalence_sim} and cross_prop {crossover_probability} is done!" 
         commando_uck = f'echo "{zgjimi}" | mail -s "Simulation done!" marvin.xhemrishi@tum.de'
         coje = subprocess.call(commando_uck, shell = True)
 

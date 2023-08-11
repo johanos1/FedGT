@@ -190,6 +190,7 @@ class Base_Server:
         self.acc = 0.0
         self.round = 0
         self.n_threads = args.n_threads
+        self.aggregation_method = args.aggregation
 
     def run(self, received_info: List[OrderedDict]) -> List[OrderedDict]:
         """Aggregater client models and evaluate accuracy
@@ -201,7 +202,10 @@ class Base_Server:
             List[OrderedDict]: copies of global model to each thread
         """
         # aggregate client models
-        server_outputs = self.aggregate_models(received_info)
+        if self.aggregation_method == "GM":
+            server_outputs = self.GM_aggregation(received_info)
+        else:
+            server_outputs = self.aggregate_models(received_info)
 
         # check accuracy on test set
         acc, cf_matrix, class_prec, class_recall, class_f1 = self.evaluate(test_data=True)
@@ -248,6 +252,33 @@ class Base_Server:
             return [self.model.cpu().state_dict() for x in range(self.n_threads)]
         else:
             return [ssd for x in range(self.n_threads)]
+
+    def GM_aggregation(self, client_info):
+        """
+        Geometric median aggregation of client models
+        Args:
+            client_info (_type_): includes the local models, index, accuracy, num samples
+
+        Returns:
+            _type_: list of new global model, one copy for each thread
+        """
+        from geom_median.torch import compute_geometric_median
+        # sort clients with respect to index
+        client_info.sort(key=lambda tup: tup["client_index"])
+        # pick only the weights from the clients
+        client_sd = [c["weights"] for c in client_info]
+        # compute fraction of data samples each client has
+        cw = torch.from_numpy(np.array([c["num_samples"] / sum([x["num_samples"] for x in client_info]) for c in client_info]))
+        # load the previous server model
+        ssd = self.model.state_dict()
+        # go through each layer in model and replace with weighted average of client models
+        for key in ssd:
+            ssd[key] = compute_geometric_median([sd[key] for sd in client_sd], cw).median 
+        # Update the server model!
+        self.model.load_state_dict(ssd)
+        # return a copy of the aggregated model
+        return [self.model.cpu().state_dict() for x in range(self.n_threads)]
+        
 
     def evaluate(self, test_data=False, eval_model=None):
 
