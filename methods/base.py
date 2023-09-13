@@ -305,6 +305,7 @@ class Base_Server:
         with torch.no_grad():
             for batch_idx, (x, target) in enumerate(data_loader):
                 x = x.to(self.device)
+                
                 target = target.to(self.device)
                 if eval_model is None:
                     pred = self.model(x)
@@ -364,5 +365,6 @@ class Base_Server:
         )
         # number of correct predictions from total samples
         acc2 = (true_pos.sum()) / tot
+    
 
         return acc, cf_matrix, class_prec, class_recall, class_f1

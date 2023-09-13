@@ -1,0 +1,46 @@
+# Note that several of the parameters are given as lists to enable sweeping over parameters.
+
+[Sim]
+n_threads = 2
+n_clients = 15 # 15
+# 0: no defence (keep the malicous nodes), 1: oracle (remove all malicious nodes), 2: group testing, 3: noiseless group testing, 4: GM_aggregation
+MODE_list = [0]
+# 0: permutation attack, 1: random labels, 2: 1->7 label flip
+n_malicious_list = [1]
+attack_list = [0]
+total_MC_it = 1
+#n_malicious_list = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 0]
+PCA_simulation = false
+
+[Data]
+val_size = 100
+partition_method = "homo"      # homo, hetero
+data_dir = "data/fed_isic2019"
+alpha_list = [1e4]
+n_classes = 8
+
+[ML]
+method = "fedavg"         # fedavg
+pretrained = 0
+client_sample = 1.0
+lr = 0.05
+momentum = 0.9
+wd = 0.001
+communication_rounds = 20
+epochs_list = [1]
+batch_size_list = [64]
+
+
+[GT]
+n_tests = 8                         #4#8,10
+group_test_round = 5
+test_threshold = 0.96               # GT threshold
+crossover_probability_list = [0.05]
+prevalence_list = [0.2]
+P_FA = 0.05
+P_MD = 0.05
+manual_params = false
+# Decoding thresholds
+BCJR_min_threshold = 0.1
+BCJR_max_threshold = 0.91
+BCJR_step_threshold = 1

@@ -121,7 +121,7 @@ def load_model(mc_iteration, index_of_nm):
 
 if __name__ == "__main__":
 
-    cfg_path = "./cfg_files/cfg_cifar.toml"
+    cfg_path = "./cfg_files/cfg_isic.toml"
     with open(cfg_path, "r") as file:
         cfg = DotMap(toml.load(file))
     
@@ -288,7 +288,7 @@ if __name__ == "__main__":
                 # -----------------------------------------
                 #         Choose Model and FL protocol
                 # -----------------------------------------
-                if "cifar" in cfg.Data.data_dir:
+                if "cifar" in cfg.Data.data_dir or "isic" in cfg.Data.data_dir:
                     Model = resnet18
                     #Model = convnetwork
                 elif "mnist" in cfg.Data.data_dir:
@@ -415,7 +415,7 @@ if __name__ == "__main__":
                             # if no defence, keep all clients
                             clients_to_aggregate = client_outputs
                         
-                        if GM_aggregation:
+                        elif GM_aggregation:
                             # if doing GM aggregation, keep all of them
                             clients_to_aggregate = client_outputs
         
@@ -475,6 +475,11 @@ if __name__ == "__main__":
                                     if DEC[:, client_idx] == 0
                                 ]
                         server_outputs, acc[0, r], cf_matrix = server.run(clients_to_aggregate)
+                        true_positives = np.diag(cf_matrix)
+                        total_actuals = np.sum(cf_matrix, axis=1)
+                        recalls = true_positives / total_actuals
+                        balanced_acc = np.mean(recalls)
+                        acc[0, r] = balanced_acc
 
                         sim_result["cf_matrix"][thres_indx, monte_carlo_iterr, r, :, :] = cf_matrix
 
