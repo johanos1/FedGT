@@ -9,3 +9,4 @@ dependencies:
   - numpy
   - dotmap
   - scikit-learn
+  - toml

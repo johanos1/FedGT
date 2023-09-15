@@ -28,6 +28,7 @@ from models.logistic_regression import logistic_regression
 from data_preprocessing.data_poisoning import flip_label, random_labels, permute_labels
 from models.resnet import resnet56, resnet18
 from models.convnet import convnetwork
+from models.eff_net import efficient_net_lite, efficient_net
 from defence.group_test import Group_Test
 
 
@@ -244,6 +245,7 @@ if __name__ == "__main__":
                 # -----------------------------------------
                 malicious_clients = np.random.permutation(cfg.Sim.n_clients)
                 malicious_clients = malicious_clients[:n_malicious].tolist()
+                print(f"malicious clients: {malicious_clients} \n")
                 defective = np.zeros((1, cfg.Sim.n_clients), dtype=np.uint8)
                 defective[:, malicious_clients] = 1
                 attacks = list_of_lists = [[] for i in range(cfg.Sim.n_clients)]
@@ -288,11 +290,15 @@ if __name__ == "__main__":
                 # -----------------------------------------
                 #         Choose Model and FL protocol
                 # -----------------------------------------
-                if "cifar" in cfg.Data.data_dir or "isic" in cfg.Data.data_dir:
+                if "cifar" in cfg.Data.data_dir:
                     Model = resnet18
                     #Model = convnetwork
                 elif "mnist" in cfg.Data.data_dir:
                     Model = logistic_regression
+                elif "isic" in cfg.Data.data_dir:
+                    #Model = efficient_net_lite
+                    Model = efficient_net
+                    #Model = resnet18
 
                 # Pick FL method
                 Server = fedavg.Server
@@ -519,11 +525,15 @@ if __name__ == "__main__":
                 prefix = "./results/MNIST_"
             elif "cifar" in cfg.Data.data_dir:
                 prefix = "./results/CIFAR10_"
+            elif "isic" in cfg.Data.data_dir:
+                prefix = "./results/ISIC_"
             if cfg.Sim.PCA_simulation == True:
                 if "mnist" in cfg.Data.data_dir:
                     prefix = "./PCA_results/MNIST_"
                 elif "cifar" in cfg.Data.data_dir:
                     prefix = "./PCA_results/CIFAR10_"
+                elif "isic" in cfg.Data.data_dir:
+                    prefix = "./PCA_results/ISIC_"
             if not prev_and_cross_sim:
                 suffix = f"m-{n_malicious},{cfg.Sim.n_clients}_t-{cfg.GT.n_tests}_e-{epochs}_bs-{batch_size}_alpha-{alpha}_totalMC-{cfg.Sim.total_MC_it}_MODE-{MODE}_att-{ATTACK}.txt"
             else:
