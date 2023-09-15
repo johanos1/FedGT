@@ -166,6 +166,9 @@ if __name__ == "__main__":
             elif "cifar10" in cfg.Data.data_dir:
                 src = 7
                 target = 4
+            elif "isic" in cfg.Data.data_dir:
+                src = 0
+                target = 1
         
         #zgjimi = f"Mismatched: The simulation for {n_malicious} mal_nodes, prev {prevalence_sim} and cross_prop {crossover_probability} is done!" 
         #commando_uck = f'echo "{zgjimi}" | mail -s "Simulation done!" marvin.xhemrishi@tum.de'
@@ -262,6 +265,9 @@ if __name__ == "__main__":
                             elif "cifar10" in cfg.Data.data_dir:
                                 src = 7
                                 target = 4
+                            elif "isic" in cfg.Data.data_dir:
+                                src = 0 # melanoma
+                                target = 1 # mole
                             label_flips = [(src, target)]
                             attacks[client].append((flip_label, label_flips))
 

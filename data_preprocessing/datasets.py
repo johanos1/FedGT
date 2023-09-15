@@ -235,7 +235,7 @@ class Custom_Dataset(Dataset):
         # to return a PIL Image
         if self.is_mnist:
             img = Image.fromarray(img.numpy(), mode="L")
-        if self.is_isic:
+        elif self.is_isic:
             img = np.array(img)
         else:
             img = Image.fromarray(img)
