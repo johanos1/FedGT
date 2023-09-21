@@ -140,11 +140,11 @@ class Group_Test:
         )
         return self.DEC
 
-    def get_group_accuracies(self, client_models, server):
+    def get_group_accuracies(self, client_models, server, num_classes):
         group_acc = np.zeros(self.n_tests)
-        class_precision = np.zeros((self.n_tests, 10))
-        class_recall = np.zeros((self.n_tests, 10))
-        class_f1 = np.zeros((self.n_tests, 10))
+        class_precision = np.zeros((self.n_tests, num_classes))
+        class_recall = np.zeros((self.n_tests, num_classes))
+        class_f1 = np.zeros((self.n_tests, num_classes))
         for i in range(self.n_tests):
             # np.where gives a tuple where first entry is the list we want
             client_idxs = np.where(self.parity_check_matrix[i, :] == 1)[0].tolist()
@@ -162,4 +162,10 @@ class Group_Test:
                 class_recall[i, :],
                 class_f1[i, :],
             ) = server.evaluate(test_data=False, eval_model=model)
+            
+            true_positives = np.diag(cf_matrix)
+            total_actuals = np.sum(cf_matrix, axis=1)
+            recalls = true_positives / total_actuals
+            group_acc[i] = np.mean(recalls)
+            
         return group_acc, class_precision, class_recall, class_f1

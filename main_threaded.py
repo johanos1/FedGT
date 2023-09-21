@@ -194,7 +194,7 @@ if __name__ == "__main__":
 
         
         # No need to loop over thresholds if we dont do group testing
-        if oracle or no_defence:
+        if oracle or no_defence or GM_aggregation:
             threshold_vec = [np.inf]
 
         # prepare to store results
@@ -455,10 +455,10 @@ if __name__ == "__main__":
                             elif r == cfg.GT.group_test_round:  
                                 
                                 if noiseless_gt is True:
-                                    group_accuracies, prec, rec, f1 = gt.get_group_accuracies(client_outputs, server)
+                                    group_accuracies, prec, rec, f1 = gt.get_group_accuracies(client_outputs, server, class_num)
                                     DEC = gt.noiseless_group_test(syndrome)
                                 else:
-                                    group_accuracies, prec, rec, f1 = gt.get_group_accuracies(client_outputs, server)
+                                    group_accuracies, prec, rec, f1 = gt.get_group_accuracies(client_outputs, server, class_num)
                                     if ATTACK < 2:
                                         DEC = gt.perform_group_test(group_accuracies)
                                     elif ATTACK == 2:
