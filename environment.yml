@@ -10,3 +10,10 @@ dependencies:
   - dotmap
   - scikit-learn
   - toml
+  - tqdm
+  - pandas
+  - pip
+  - pip:
+    - albumentations
+    - timm
+    - geom_median
