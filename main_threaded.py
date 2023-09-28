@@ -407,8 +407,8 @@ if __name__ == "__main__":
                         round_start = time.time()
                         
                         # Store the server model before GT to be used in the other loops
-                        if (not checkpoint_exists[index_of_nm][monte_carlo_iterr]) and (r == cfg.GT.group_test_round) and (not oracle):
-                           checkpoint_exists[index_of_nm][monte_carlo_iterr] = save_model(server_outputs[0], monte_carlo_iterr, index_of_nm, cfg.Data.data_dir)
+                        # if (not checkpoint_exists[index_of_nm][monte_carlo_iterr]) and (r == cfg.GT.group_test_round) and (not oracle):
+                        #    checkpoint_exists[index_of_nm][monte_carlo_iterr] = save_model(server_outputs[0], monte_carlo_iterr, index_of_nm, cfg.Data.data_dir)
 
                         # -----------------------------------------
                         #         Perform local training
