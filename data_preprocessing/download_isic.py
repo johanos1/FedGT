@@ -129,7 +129,7 @@ def download_isic():
         dest_file_2 = os.path.join(data_directory, "ISIC_2019_Training_Metadata.csv")
         dest_file_3 = os.path.join(data_directory, "ISIC_2019_Training_GroundTruth.csv")
         dest_file_4 = os.path.join(data_directory, "ISIC_2019_Training_Metadata_FL.csv")
-        file1 = os.path.join(current_directory, "ISIC2019/HAM10000_metadata")
+        file1 = os.path.join(current_directory, "data_preprocessing/HAM10000_metadata")
 
         # download and unzip data
         os.system(f"wget {url_1} --no-check-certificate -O {dest_file_1}")

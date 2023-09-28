@@ -1,5 +1,6 @@
 import logging
 import numpy as np
+import random
 from PIL import Image
 from torchvision.datasets import CIFAR10, CIFAR100, MNIST, FashionMNIST
 from torch.utils.data import random_split, DataLoader, Dataset
@@ -75,8 +76,16 @@ class Data_Manager:
             
             n_temp_data = n_data - n_train_data
             n_test_ratio = (n_temp_data - self.val_size)/n_temp_data
-            val_indices, test_indices, y_val, y_test = train_test_split(X_temp, y_temp, test_size=n_test_ratio, random_state=12)
 
+            # Make sure we have representation of each label
+            rng_state = 12
+            num_classes = len(np.unique(y_train))
+            cnt = 0
+            while cnt != num_classes:
+                rng_state = rng_state+1
+                val_indices, test_indices, y_val, y_test = train_test_split(X_temp, y_temp, test_size=n_test_ratio, random_state=rng_state)
+                cnt = len(np.unique(y_val))
+                
             self.train_dataset = ISICDataset(x, y, train_indices, source_folder)
             self.valid_dataset = ISICDataset(x, y, val_indices, source_folder)
             self.test_dataset = ISICDataset(x, y, test_indices, source_folder)
@@ -104,6 +113,7 @@ class Data_Manager:
             largest_group = np.argmax(group_counts)
             
             lst = x_grouped[largest_group]
+            
             mid_idx = len(lst) // 2
             first_half = lst[:mid_idx]
             second_half = lst[mid_idx:]
@@ -196,7 +206,8 @@ class ISICDataset(Dataset):
     def __getitem__(self, idx):
         # Load image
         img_path = self.root_dir + '/' + self.x['image'][idx] + '.jpg'
-        img = Image.open(img_path).convert('RGB')  # Convert to RGB (in case some images are grayscale)
+        with Image.open(img_path) as img:
+            img =img.convert('RGB')  # Convert to RGB (in case some images are grayscale)
 
         return img, self.y[idx]
 

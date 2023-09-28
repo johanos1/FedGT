@@ -1,14 +1,14 @@
 # Note that several of the parameters are given as lists to enable sweeping over parameters.
 
 [Sim]
-n_threads = 8
+n_threads = 5
 n_clients = 15
 # 0: no defence (keep the malicous nodes), 1: oracle (remove all malicious nodes), 2: group testing 
 MODE_list = [2]  
 # 0: permutation attack, 1: random labels, 2: 1->7 label flip
-attack_list = [0]
-total_MC_it = 1
-n_malicious_list = [2]
+attack_list = [2]
+total_MC_it = 10
+n_malicious_list = [0,1,2,3,4,5]
 
 [Data]
 val_size = 100
@@ -24,13 +24,13 @@ client_sample = 1.0
 lr = 0.01
 momentum = 0
 wd = 0
-communication_rounds = 5
+communication_rounds = 10
 epochs_list = [1]
 batch_size_list = [64]
 
 [GT]
 n_tests = 8
-group_test_round = 3
+group_test_round = 0
 test_threshold = 0.96 # GT threshold
 crossover_probability_list = [0.05]
 prevalence_list = [0.133]

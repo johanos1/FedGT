@@ -28,7 +28,7 @@ from models.logistic_regression import logistic_regression
 from data_preprocessing.data_poisoning import flip_label, random_labels, permute_labels
 from models.resnet import resnet56, resnet18
 from models.convnet import convnetwork
-from models.eff_net import efficient_net_lite, efficient_net
+from models.eff_net import efficient_net
 from defence.group_test import Group_Test
 
 
@@ -81,10 +81,18 @@ def set_random_seed(seed=1):
     # torch.use_deterministic_algorithms(True) # only use deterministic algorithms
 
 # If folder doesn't exist, create folder and store the model
-def save_model(server_model_statedict, mc_iteration, index_of_nm):
+def save_model(server_model_statedict, mc_iteration, index_of_nm, data_dir):
     import os
+    
+    if "mnist" in data_dir:
+        data_dir = "mnist"
+    elif "cifar10" in data_dir:
+        data_dir = "cifar"
+    elif "isic" in data_dir:
+        data_dir = "isic"
+    
     checkpoint_folder = "./checkpoint/"
-    cp_name = f"server-model_MC_{mc_iteration}_nm_{index_of_nm}"
+    cp_name = f"server-model_{data_dir}_MC_{mc_iteration}_nm_{index_of_nm}"
     
     if not os.path.exists(checkpoint_folder):
         os.makedirs(checkpoint_folder)
@@ -103,9 +111,16 @@ def save_model(server_model_statedict, mc_iteration, index_of_nm):
     return checkpoint_exists
 
 # load the server model right before GT
-def load_model(mc_iteration, index_of_nm):
+def load_model(mc_iteration, index_of_nm, data_dir):
+    if "mnist" in data_dir:
+        data_dir = "mnist"
+    elif "cifar10" in data_dir:
+        data_dir = "cifar"
+    elif "isic" in data_dir:
+        data_dir = "isic"
+        
     checkpoint_folder = "./checkpoint/"
-    cp_name = f"server-model_MC_{mc_iteration}_nm_{index_of_nm}"
+    cp_name = f"server-model_{data_dir}_MC_{mc_iteration}_nm_{index_of_nm}"
     server_model_statedict = torch.load(checkpoint_folder + cp_name + ".pt")
     
     # load pickled file and set random states as before checkpoint
@@ -327,11 +342,11 @@ if __name__ == "__main__":
                 
                 # get global model to start from
                 index_of_nm = cfg.Sim.n_malicious_list.index(n_malicious)
-                if not checkpoint_exists[index_of_nm][monte_carlo_iterr]:
+                if not checkpoint_exists[index_of_nm][monte_carlo_iterr] or oracle or GM_aggregation:
                     server_outputs = server.start()
                     start_round = 0
-                elif checkpoint_exists[index_of_nm][monte_carlo_iterr] and (not oracle):
-                    checkpoint_model_statedict = load_model(monte_carlo_iterr, index_of_nm)
+                elif checkpoint_exists[index_of_nm][monte_carlo_iterr]:
+                    checkpoint_model_statedict = load_model(monte_carlo_iterr, index_of_nm, cfg.Data.data_dir)
                     server_outputs = [checkpoint_model_statedict for x in range(server.n_threads)]
                     start_round = cfg.GT.group_test_round
                     
@@ -413,8 +428,8 @@ if __name__ == "__main__":
                         round_start = time.time()
                         
                         # Store the server model before GT to be used in the other loops
-                        #if (not checkpoint_exists[index_of_nm][monte_carlo_iterr]) and (r == cfg.GT.group_test_round) and (not oracle):
-                        #    checkpoint_exists[index_of_nm][monte_carlo_iterr] = save_model(server_outputs[0], monte_carlo_iterr, index_of_nm)
+                        if (not checkpoint_exists[index_of_nm][monte_carlo_iterr]) and (r == cfg.GT.group_test_round) and (not oracle):
+                           checkpoint_exists[index_of_nm][monte_carlo_iterr] = save_model(server_outputs[0], monte_carlo_iterr, index_of_nm, cfg.Data.data_dir)
 
                         # -----------------------------------------
                         #         Perform local training
