@@ -8,8 +8,6 @@ import logging
 import numpy as np
 import torchvision.transforms as transforms
 import random
-import albumentations
-
 from data_preprocessing.datasets import Data_Manager
 
 
@@ -84,26 +82,6 @@ def _data_transforms(datadir):
             ]
         )
     
-    elif "isic" in datadir:
-        sz = 200
-        train_transform = albumentations.Compose(
-                [
-                    albumentations.RandomScale(0.07),
-                    albumentations.Rotate(50),
-                    albumentations.RandomBrightnessContrast(0.15, 0.1),
-                    albumentations.Flip(p=0.5),
-                    albumentations.Affine(shear=0.1),
-                    albumentations.RandomCrop(sz, sz),
-                    albumentations.CoarseDropout(random.randint(1, 8), 16, 16),
-                    albumentations.Normalize(always_apply=True),
-                ]
-            )
-        valid_transform = albumentations.Compose(
-                [
-                    albumentations.CenterCrop(sz, sz),
-                    albumentations.Normalize(always_apply=True),
-                ]
-            )
 
     return train_transform, valid_transform
 
@@ -179,7 +157,6 @@ def load_partition_data(
     partition_alpha,
     client_number,
     batch_size,
-    attacks,
     val_size,
 ):
 
@@ -193,21 +170,18 @@ def load_partition_data(
     client_data_num = dict()
     client_dl_dict = dict()
     
-    if data_obj.is_isic:
-        server_test_dl = data_obj.get_test_dl_isic()
-        net_dataidx_map = data_obj.splitISIC2019(client_number)
-        class_num = len(np.unique(server_test_dl.dataset.target))
-    else:
-        server_test_dl = data_obj.get_test_dl()
-        # Start looking at data for clients
-        class_num, net_dataidx_map = partition_data(data_obj, partition_method, client_number, partition_alpha)
+
+    server_test_dl = data_obj.get_test_dl()
+    # Start looking at data for clients
+    class_num, net_dataidx_map = partition_data(data_obj, partition_method, client_number, partition_alpha)
+    
     test_data_num = len(server_test_dl.dataset)
     for client_idx in range(client_number):
         dataidxs = net_dataidx_map[client_idx]
         local_data_num = len(dataidxs)
         client_data_num[client_idx] = local_data_num
 
-        client_dl = data_obj.get_client_dl(dataidxs, attacks[client_idx])
+        client_dl = data_obj.get_client_dl(dataidxs)
         client_dl_dict[client_idx] = client_dl
 
         logging.info(
