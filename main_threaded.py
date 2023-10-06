@@ -44,7 +44,6 @@ def allocate_clients_to_threads(n_rounds, n_threads, n_clients):
     for round in range(n_rounds):
 
         num_clients = n_clients
-        client_list = list(range(num_clients))
         if num_clients > 0:
             idxs = [[] for i in range(n_threads)]
             remaining_clients = num_clients
@@ -74,7 +73,9 @@ def set_random_seed(seed=1):
 
 if __name__ == "__main__":
 
-    cfg_path = "./cfg_files/cfg_mnist.toml"
+    #cfg_path = "./cfg_files/cfg_mnist.toml"
+    cfg_path = "./cfg_files/cfg_cifar.toml"
+    
     with open(cfg_path, "r") as file:
         cfg = DotMap(toml.load(file))
     
@@ -218,35 +219,19 @@ if __name__ == "__main__":
                     sim_result["cf_matrix"][monte_carlo_iterr, r, :, :] = cf_matrix # store confusion matrix
 
                     round_end = time.time()
-                    if prev_and_cross_sim:
-                        logging.info(f"MC-Iteration: {monte_carlo_iterr} --- Round {r} ---  Time: {round_end - round_start} --- Accuracy: {acc[0,r]}")
+                    
+                    logging.info(f"MC-Iteration: {monte_carlo_iterr} --- Round {r} ---  Time: {round_end - round_start} --- Accuracy: {acc[0,r]}")
                         
-                accuracy[thres_indx, monte_carlo_iterr, :] = acc
-
-        checkpoint_dict["accuracy"] = accuracy.tolist()
-        checkpoint_dict["P_MD"] = P_MD.tolist()
-        checkpoint_dict["P_FA"] = P_FA.tolist()
-        checkpoint_dict["group_acc"] = checkpoint_dict["group_acc"].tolist()
-        checkpoint_dict["group_prec"] = checkpoint_dict["group_prec"].tolist()
-        checkpoint_dict["group_recall"] = checkpoint_dict["group_recall"].tolist()
-        checkpoint_dict["group_f1"] = checkpoint_dict["group_f1"].tolist()
-        checkpoint_dict["cf_matrix"] = checkpoint_dict["cf_matrix"].tolist()
-        checkpoint_dict["DEC"] = checkpoint_dict["DEC"].tolist()
-        checkpoint_dict["syndrome"] = checkpoint_dict["syndrome"].tolist()
-        checkpoint_dict["malicious_clients"] = checkpoint_dict["malicious_clients"].tolist()
-        checkpoint_dict["bsc_channel"] = checkpoint_dict["bsc_channel"].tolist()
-
+                sim_result["accuracy"][monte_carlo_iterr, :] = acc
 
         if "mnist" in cfg.Data.data_dir:
             prefix = "./results/MNIST_"
         elif "cifar" in cfg.Data.data_dir:
             prefix = "./results/CIFAR10_"
-
-        if not prev_and_cross_sim:
-            suffix = f"_e-{epochs}_bs-{batch_size}_alpha-{alpha}_totalMC-{cfg.Sim.total_MC_it}.txt"
+        suffix = f"_e-{epochs}_bs-{batch_size}_alpha-{alpha}_totalMC-{cfg.Sim.total_MC_it}.txt"
         sim_title = prefix + suffix
 
         with open(sim_title, "w") as convert_file:
-            convert_file.write(json.dumps(checkpoint_dict))
+            convert_file.write(json.dumps(sim_result))
 
 

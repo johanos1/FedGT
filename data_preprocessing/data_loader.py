@@ -7,7 +7,6 @@ import logging
 
 import numpy as np
 import torchvision.transforms as transforms
-import random
 from data_preprocessing.datasets import Data_Manager
 
 

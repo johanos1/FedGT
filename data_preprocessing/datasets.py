@@ -1,10 +1,8 @@
 import logging
 import numpy as np
-import random
 from PIL import Image
 from torchvision.datasets import CIFAR10, CIFAR100, MNIST, FashionMNIST
 from torch.utils.data import random_split, DataLoader, Dataset
-from sklearn.model_selection import train_test_split
 
 logging.basicConfig()
 logger = logging.getLogger()
