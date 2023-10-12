@@ -2,7 +2,7 @@ import toml
 import random
 import logging
 from collections import defaultdict
-import multiprocessing
+import math
 import time
 import json
 import pickle
@@ -101,7 +101,7 @@ if __name__ == "__main__":
         sim_result["accuracy"] = np.zeros((cfg.Sim.total_MC_it, cfg.ML.communication_rounds))
         sim_result["cf_matrix"] = np.zeros((cfg.Sim.total_MC_it,cfg.ML.communication_rounds,cfg.Data.n_classes,cfg.Data.n_classes,))
 
-        model_samples = [[[] for _ in range(cfg.ML.communication_rounds)] for _ in range(cfg.Sim.total_MC_it)]
+        model_samples = [[[] for _ in range(3)] for _ in range(cfg.Sim.total_MC_it)]
 
         try:
             set_start_method("spawn")
@@ -217,9 +217,11 @@ if __name__ == "__main__":
                     # print(np.size(client_outputs[0]["weights"]['linear.weight'].numpy()))
                     # print(np.size(client_outputs[0]["weights"]['linear.bias'].numpy()))
 
-                    for ii in range(0,cfg.Sim.n_clients):
-                        if "mnist" in cfg.Data.data_dir:
-                            model_samples[monte_carlo_iterr][r].append(client_outputs[ii]["weights"])
+                    if r in {0,4,9}:
+                        for ii in range(0,cfg.Sim.n_clients):
+                            a = client_outputs[ii]["weights"]
+                            b = {key:val.detach().numpy() for key,val in a.items()}
+                            model_samples[monte_carlo_iterr][math.ceil(r/5)].append(b)
 
                     # -----------------------------------------
                     #               Aggregation
@@ -262,4 +264,4 @@ if __name__ == "__main__":
     # with open(sim_title, "rb") as f:
     #     model_samples = pickle.load(f)
 
-    print(model_samples.shape)
+    print(np.array(model_samples).shape)
