@@ -1,0 +1,27 @@
+[Sim]
+n_threads = 8 # number of parallel processes
+n_clients = 20 # number of clients in federation
+total_MC_it = 5000 # number of Monte Carlo iterations
+
+[Data]
+val_size = 100 # size of validation set
+partition_method = "homo" # {homo, hetero}
+data_dir = "data/mnist"
+alpha_list = [1e4] # parameter for Latent Dirichlet Allocation
+n_classes = 10 # number of classes in dataset
+
+[ML]
+method = "fedavg"        
+lr = 0.01 # learning rate
+momentum = 0 # momentum for SGD
+wd = 0 # weight decay
+communication_rounds = 10 # total number of comm rounds
+epochs_list = [1] # number of local epochs
+batch_size_list = [64] # batch size for local training
+
+
+    
+    
+    
+
+
