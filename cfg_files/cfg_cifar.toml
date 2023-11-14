@@ -1,10 +1,10 @@
 [Sim]
-n_threads = 8 # number of parallel processes
-n_clients = 15 # number of clients in federation
-total_MC_it = 5 # number of Monte Carlo iterations
+n_threads = 10 # number of parallel processes
+n_clients = 20 # number of clients in federation
+total_MC_it = 500 # number of Monte Carlo iterations
 
 [Data]
-val_size = 100 # size of validation set
+val_size = 0 # size of validation set
 partition_method = "homo" # {homo, hetero}
 data_dir = "data/cifar10"
 alpha_list = [1e4] # parameter for Latent Dirichlet Allocation
@@ -15,6 +15,6 @@ method = "fedavg"
 lr = 0.05 # learning rate
 momentum = 0.9 # momentum for SGD
 wd = 0.001 # weight decay
-communication_rounds = 50 # total number of comm rounds
-epochs_list = [5] # number of local epochs
+communication_rounds = 10 # total number of comm rounds
+epochs_list = [2] # number of local epochs
 batch_size_list = [128] # batch size for local training

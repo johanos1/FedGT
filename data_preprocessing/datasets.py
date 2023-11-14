@@ -1,7 +1,7 @@
 import logging
 import numpy as np
 from PIL import Image
-from torchvision.datasets import CIFAR10, CIFAR100, MNIST, FashionMNIST
+from torchvision.datasets import CIFAR10, CIFAR100, MNIST, FashionMNIST, EMNIST
 from torch.utils.data import random_split, DataLoader, Dataset
 
 logging.basicConfig()
@@ -42,24 +42,31 @@ class Data_Manager:
         self.is_mnist = False
 
         if "fashionmnist" in self.root:
-            dataObj = FashionMNIST
+            dataset = FashionMNIST(self.root, train=True, transform=None, download=True)
+            self.is_mnist = True
+        elif "emnist" in self.root:
+            dataset = EMNIST(self.root, split='byclass', train=True, transform=None, download=True)
             self.is_mnist = True
         elif "mnist" in self.root:
-            dataObj = MNIST
+            dataset = MNIST(self.root, train=True, transform=None, download=True)
             self.is_mnist = True
         elif "cifar100" in self.root:
-            dataObj = CIFAR100
+            dataset = CIFAR100(self.root, train=True, transform=None, download=True)
         elif "cifar10" in self.root:
-            dataObj = CIFAR10
+            dataset = CIFAR10(self.root, train=True, transform=None, download=True)
         else:
             logger.info("Dataset not supported")
-            return            
-
-        dataset = dataObj(self.root, train=True, transform=None, download=True)
+            return
+        
         num_data = len(dataset)
         # Split into validation and training data
         self.train_dataset, self.valid_dataset = random_split(dataset, [num_data - self.val_size, self.val_size])
-        self.test_dataset = dataObj(self.root, train=False, transform=self.val_transform, download=True)
+        
+        if "emnist" in self.root:
+            self.test_dataset = EMNIST(self.root, split='byclass', train=False, transform=self.val_transform, download=True)
+        else:
+            self.test_dataset = dataset.__class__(self.root, train=False, transform=self.val_transform, download=True)
+        
         self.test_dataset.target = self.test_dataset.targets
         
     

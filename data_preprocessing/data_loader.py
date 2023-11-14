@@ -8,7 +8,7 @@ import logging
 import numpy as np
 import torchvision.transforms as transforms
 from data_preprocessing.datasets import Data_Manager
-
+from concurrent.futures import ProcessPoolExecutor
 
 logging.basicConfig()
 logger = logging.getLogger()
@@ -150,6 +150,18 @@ def get_data_object(datadir, val_size, batch_size):
     return dl_obj
 
 
+def process_client(client_idx, net_dataidx_map, data_obj):
+    dataidxs = net_dataidx_map[client_idx]
+    local_data_num = len(dataidxs)
+    
+    client_dl = data_obj.get_client_dl(dataidxs)
+
+    logging.info(
+        "client_idx = %d, local_sample_number = %d, batch_num = %d" % (client_idx, local_data_num, len(client_dl))
+    )
+    
+    return client_idx, local_data_num, client_dl
+
 def load_partition_data(
     data_dir,
     partition_method,
@@ -157,7 +169,10 @@ def load_partition_data(
     client_number,
     batch_size,
     val_size,
+    upper_client_number=None
 ):
+    if upper_client_number is None:
+        upper_client_number = client_number
 
     data_obj = get_data_object(data_dir, val_size, batch_size)
 
@@ -172,20 +187,35 @@ def load_partition_data(
 
     server_test_dl = data_obj.get_test_dl()
     # Start looking at data for clients
-    class_num, net_dataidx_map = partition_data(data_obj, partition_method, client_number, partition_alpha)
+    class_num, net_dataidx_map = partition_data(data_obj, partition_method, upper_client_number, partition_alpha)
     
     test_data_num = len(server_test_dl.dataset)
-    for client_idx in range(client_number):
-        dataidxs = net_dataidx_map[client_idx]
-        local_data_num = len(dataidxs)
+    
+    # Ensure all data structures that you pass as arguments are picklable
+    import os
+    with ProcessPoolExecutor(max_workers= np.minimum(client_number, os.cpu_count())) as executor:
+        results = list(executor.map(process_client, range(client_number), [net_dataidx_map]*client_number, [data_obj]*client_number))
+
+    # Assign results back to your main data structures
+    for client_idx, local_data_num, client_dl in results:
         client_data_num[client_idx] = local_data_num
-
-        client_dl = data_obj.get_client_dl(dataidxs)
         client_dl_dict[client_idx] = client_dl
+    
+        # logging.info(
+        #     "client_idx = %d, local_sample_number = %d, batch_num = %d" % (client_idx, local_data_num, len(client_dl))
+        # )
+   
+    # for client_idx in range(client_number):
+    #     dataidxs = net_dataidx_map[client_idx]
+    #     local_data_num = len(dataidxs)
+    #     client_data_num[client_idx] = local_data_num
 
-        logging.info(
-            "client_idx = %d, local_sample_number = %d, batch_num = %d" % (client_idx, local_data_num, len(client_dl))
-        )
+    #     client_dl = data_obj.get_client_dl(dataidxs)
+    #     client_dl_dict[client_idx] = client_dl
+
+    #     logging.info(
+    #         "client_idx = %d, local_sample_number = %d, batch_num = %d" % (client_idx, local_data_num, len(client_dl))
+    #     )
 
     record_net_data_stats(server_val_dl, server_test_dl, client_dl_dict)
 

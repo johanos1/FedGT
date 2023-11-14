@@ -33,6 +33,9 @@ class Base_Client:
         """
         # If you want to customize how to state dict is loaded you can do so here
         self.model.load_state_dict(server_state_dict)
+        
+    def increase_round(self):
+        self.round += 1
 
     def run(self, received_info):
 
@@ -51,8 +54,6 @@ class Base_Client:
                     "client_index": self.client_index,
                 }
             )
-
-        self.round += 1
         return client_results
 
     def train_model(self):
@@ -304,6 +305,10 @@ class Base_Server:
         y_pred = []
         with torch.no_grad():
             for batch_idx, (x, target) in enumerate(data_loader):
+                if batch_idx >= 50:
+                    break
+        
+        
                 x = x.to(self.device)
                 
                 target = target.to(self.device)
