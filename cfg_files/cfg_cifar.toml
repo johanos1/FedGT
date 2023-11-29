@@ -1,13 +1,13 @@
 [Sim]
-n_threads = 10 # number of parallel processes
-n_clients = 20 # number of clients in federation
-total_MC_it = 500 # number of Monte Carlo iterations
+n_threads = 3 # number of parallel processes
+n_clients = [9] # number of clients in federation
+total_MC_it = 1 # number of Monte Carlo iterations
 
 [Data]
 val_size = 0 # size of validation set
 partition_method = "homo" # {homo, hetero}
 data_dir = "data/cifar10"
-alpha_list = [1e4] # parameter for Latent Dirichlet Allocation
+alpha_list = [0.1] # parameter for Latent Dirichlet Allocation
 n_classes = 10 # number of classes in dataset
 
 [ML]

@@ -1,7 +1,9 @@
 import torch
 
 torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False # prevent cuda from optimizing convolutional methods
+torch.backends.cudnn.benchmark = (
+    False  # prevent cuda from optimizing convolutional methods
+)
 
 import toml
 import numpy as np
@@ -13,6 +15,7 @@ from collections import defaultdict
 import time
 import json
 from itertools import product
+
 # https://stackoverflow.com/questions/6974695/python-process-pool-non-daemonic#:~:text=As%20of%20Python,answer%20by%20jfs
 from concurrent.futures import ProcessPoolExecutor as Pool
 
@@ -38,11 +41,11 @@ def run_clients(received_info):
         logging.info("exiting")
         return None
 
-# 
+
+#
 def allocate_clients_to_threads(n_rounds, n_threads, n_clients):
     mapping_dict = defaultdict(list)
     for round in range(n_rounds):
-
         num_clients = n_clients
         if num_clients > 0:
             idxs = [[] for i in range(n_threads)]
@@ -71,20 +74,21 @@ def set_random_seed(seed=1):
     ##       uncomment the following lines
     # torch.use_deterministic_algorithms(True) # only use deterministic algorithms
 
-if __name__ == "__main__":
 
-    #cfg_path = "./cfg_files/cfg_mnist.toml"
-    cfg_path = "./cfg_files/cfg_cifar.toml"
-    
+if __name__ == "__main__":
+    cfg_path = "./cfg_files/cfg_mnist_modelsample.toml"
+    # cfg_path = "./cfg_files/cfg_cifar.toml"
+
     with open(cfg_path, "r") as file:
         cfg = DotMap(toml.load(file))
-    
+
     sim_result = {}
 
-    sim_params = list(product(cfg.Data.alpha_list, cfg.ML.epochs_list, cfg.ML.batch_size_list))
+    sim_params = list(
+        product(cfg.Data.alpha_list, cfg.ML.epochs_list, cfg.ML.batch_size_list)
+    )
 
-    for (alpha, epochs, batch_size) in sim_params:        
-
+    for alpha, epochs, batch_size in sim_params:
         # prepare to store results
         sim_result["epochs"] = epochs
         sim_result["val_size"] = cfg.Data.val_size
@@ -97,20 +101,29 @@ if __name__ == "__main__":
         sim_result["comm_round"] = cfg.ML.communication_rounds
         sim_result["client_number"] = cfg.Sim.n_clients
         sim_result["total_MC_it"] = cfg.Sim.total_MC_it
-        sim_result["accuracy"] = np.zeros((cfg.Sim.total_MC_it, cfg.ML.communication_rounds))
-        sim_result["cf_matrix"] = np.zeros((cfg.Sim.total_MC_it,cfg.ML.communication_rounds,cfg.Data.n_classes,cfg.Data.n_classes,))
+        sim_result["accuracy"] = np.zeros(
+            (cfg.Sim.total_MC_it, cfg.ML.communication_rounds)
+        )
+        sim_result["cf_matrix"] = np.zeros(
+            (
+                cfg.Sim.total_MC_it,
+                cfg.ML.communication_rounds,
+                cfg.Data.n_classes,
+                cfg.Data.n_classes,
+            )
+        )
 
         try:
             set_start_method("spawn")
         except RuntimeError:
             pass
 
-        accuracy = np.zeros(( cfg.Sim.total_MC_it, cfg.ML.communication_rounds))
+        accuracy = np.zeros((cfg.Sim.total_MC_it, cfg.ML.communication_rounds))
 
         logging.info("Starting Simulation")
         for monte_carlo_iterr in range(cfg.Sim.total_MC_it):
             logging.info("Monte Carlo Iteration: {}".format(monte_carlo_iterr))
-            set_random_seed(monte_carlo_iterr) 
+            set_random_seed(monte_carlo_iterr)
             # -----------------------------------------
             # Obtain dataset for server and the clients
             # -----------------------------------------
@@ -155,7 +168,7 @@ if __name__ == "__main__":
             server_args = DotMap()
             server_args.n_threads = cfg.Sim.n_threads
             server = Server(server_dict, server_args)
-            server_outputs = server.start() # get global model to start from
+            server_outputs = server.start()  # get global model to start from
 
             # -----------------------------------------
             #               Setup Clients
@@ -184,7 +197,7 @@ if __name__ == "__main__":
             client_args.lr = cfg.ML.lr
             client_args.momentum = cfg.ML.momentum
             client_args.wd = cfg.ML.wd
-            
+
             client_info = Queue()
             for i in range(cfg.Sim.n_threads):
                 client_info.put((client_dict[i], client_args))
@@ -202,7 +215,7 @@ if __name__ == "__main__":
             ) as pool:
                 for r in range(0, cfg.ML.communication_rounds):
                     round_start = time.time()
-                    
+
                     # -----------------------------------------
                     #         Perform local training
                     # -----------------------------------------
@@ -214,14 +227,17 @@ if __name__ == "__main__":
                     #               Aggregation
                     # -----------------------------------------
                     server_outputs, acc[0, r], cf_matrix = server.run(client_outputs)
-                    
 
-                    sim_result["cf_matrix"][monte_carlo_iterr, r, :, :] = cf_matrix # store confusion matrix
+                    sim_result["cf_matrix"][
+                        monte_carlo_iterr, r, :, :
+                    ] = cf_matrix  # store confusion matrix
 
                     round_end = time.time()
-                    
-                    logging.info(f"MC-Iteration: {monte_carlo_iterr} --- Round {r} ---  Time: {round_end - round_start} --- Accuracy: {acc[0,r]}")
-                        
+
+                    logging.info(
+                        f"MC-Iteration: {monte_carlo_iterr} --- Round {r} ---  Time: {round_end - round_start} --- Accuracy: {acc[0,r]}"
+                    )
+
                 sim_result["accuracy"][monte_carlo_iterr, :] = acc
 
         if "mnist" in cfg.Data.data_dir:
@@ -233,5 +249,3 @@ if __name__ == "__main__":
 
         with open(sim_title, "w") as convert_file:
             convert_file.write(json.dumps(sim_result))
-
-

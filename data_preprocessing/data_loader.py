@@ -16,16 +16,19 @@ logger.setLevel(logging.INFO)
 
 
 def record_net_data_stats(server_val_dl, server_test_dl, client_dict_dl):
-
-    val_unique, val_counts = np.unique(np.array(server_val_dl.dataset.target), return_counts=True)
+    val_unique, val_counts = np.unique(
+        np.array(server_val_dl.dataset.target), return_counts=True
+    )
     tmp = {val_unique[i]: val_counts[i] for i in range(len(val_unique))}
     logging.info(f"\nServer validation set: {str(tmp)}")
 
-    test_unique, test_counts = np.unique(np.array(server_test_dl.dataset.target), return_counts=True)
+    test_unique, test_counts = np.unique(
+        np.array(server_test_dl.dataset.target), return_counts=True
+    )
     tmp = {test_unique[i]: test_counts[i] for i in range(len(test_unique))}
     logging.info(f"Server test set: {str(tmp)}\n")
 
-    for (i, dl) in client_dict_dl.items():
+    for i, dl in client_dict_dl.items():
         unq, unq_cnt = np.unique(dl.dataset.target, return_counts=True)
         tmp = {unq[i]: unq_cnt[i] for i in range(len(unq))}
         logging.info(f"Client {i} statistics: {tmp}")
@@ -80,7 +83,6 @@ def _data_transforms(datadir):
                 transforms.Normalize((0.1307,), (0.3081,)),  # normalize inputs
             ]
         )
-    
 
     return train_transform, valid_transform
 
@@ -122,10 +124,18 @@ def partition_data(data_obj, partition, n_nets, alpha):
                 np.random.shuffle(idx_k)
                 proportions = np.random.dirichlet(np.repeat(alpha, n_nets))
                 ## Balance
-                proportions = np.array([p * (len(idx_j) < N / n_nets) for p, idx_j in zip(proportions, idx_batch)])
+                proportions = np.array(
+                    [
+                        p * (len(idx_j) < N / n_nets)
+                        for p, idx_j in zip(proportions, idx_batch)
+                    ]
+                )
                 proportions = proportions / proportions.sum()
                 proportions = (np.cumsum(proportions) * len(idx_k)).astype(int)[:-1]
-                idx_batch = [idx_j + idx.tolist() for idx_j, idx in zip(idx_batch, np.split(idx_k, proportions))]
+                idx_batch = [
+                    idx_j + idx.tolist()
+                    for idx_j, idx in zip(idx_batch, np.split(idx_k, proportions))
+                ]
                 min_size = min([len(idx_j) for idx_j in idx_batch])
 
         for j in range(n_nets):
@@ -134,7 +144,7 @@ def partition_data(data_obj, partition, n_nets, alpha):
 
     return class_num, net_dataidx_map
 
-    
+
 def get_data_object(datadir, val_size, batch_size):
     train_transform, val_test_transform = _data_transforms(datadir)
     dl_obj = Data_Manager(
@@ -153,14 +163,16 @@ def get_data_object(datadir, val_size, batch_size):
 def process_client(client_idx, net_dataidx_map, data_obj):
     dataidxs = net_dataidx_map[client_idx]
     local_data_num = len(dataidxs)
-    
+
     client_dl = data_obj.get_client_dl(dataidxs)
 
     logging.info(
-        "client_idx = %d, local_sample_number = %d, batch_num = %d" % (client_idx, local_data_num, len(client_dl))
+        "client_idx = %d, local_sample_number = %d, batch_num = %d"
+        % (client_idx, local_data_num, len(client_dl))
     )
-    
+
     return client_idx, local_data_num, client_dl
+
 
 def load_partition_data(
     data_dir,
@@ -169,7 +181,7 @@ def load_partition_data(
     client_number,
     batch_size,
     val_size,
-    upper_client_number=None
+    upper_client_number=None,
 ):
     if upper_client_number is None:
         upper_client_number = client_number
@@ -183,28 +195,39 @@ def load_partition_data(
     # get local dataset
     client_data_num = dict()
     client_dl_dict = dict()
-    
 
     server_test_dl = data_obj.get_test_dl()
     # Start looking at data for clients
-    class_num, net_dataidx_map = partition_data(data_obj, partition_method, upper_client_number, partition_alpha)
-    
+    class_num, net_dataidx_map = partition_data(
+        data_obj, partition_method, upper_client_number, partition_alpha
+    )
+
     test_data_num = len(server_test_dl.dataset)
-    
+
     # Ensure all data structures that you pass as arguments are picklable
     import os
-    with ProcessPoolExecutor(max_workers= np.minimum(client_number, os.cpu_count())) as executor:
-        results = list(executor.map(process_client, range(client_number), [net_dataidx_map]*client_number, [data_obj]*client_number))
+
+    with ProcessPoolExecutor(
+        max_workers=np.minimum(client_number, os.cpu_count())
+    ) as executor:
+        results = list(
+            executor.map(
+                process_client,
+                range(client_number),
+                [net_dataidx_map] * client_number,
+                [data_obj] * client_number,
+            )
+        )
 
     # Assign results back to your main data structures
     for client_idx, local_data_num, client_dl in results:
         client_data_num[client_idx] = local_data_num
         client_dl_dict[client_idx] = client_dl
-    
+
         # logging.info(
         #     "client_idx = %d, local_sample_number = %d, batch_num = %d" % (client_idx, local_data_num, len(client_dl))
         # )
-   
+
     # for client_idx in range(client_number):
     #     dataidxs = net_dataidx_map[client_idx]
     #     local_data_num = len(dataidxs)
