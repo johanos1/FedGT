@@ -154,6 +154,10 @@ if __name__ == "__main__":
             }
             server_args = DotMap()
             server_args.n_threads = cfg.Sim.n_threads
+            server_args.aggregation = "FedADAM" # overwritten!!!
+            #server_args.aggregation = "FedAdagrad" # overwritten!!!
+            #server_args.aggregation = "FedYogi" # overwritten!!!
+            print(f"Alpha is equal to {alpha} and aggregation method is {server_args.aggregation}")
             server = Server(server_dict, server_args)
             server_outputs = server.start() # get global model to start from
 
