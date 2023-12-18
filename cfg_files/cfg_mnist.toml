@@ -6,9 +6,9 @@ n_clients = 15
 # 0: no defence (keep the malicous nodes), 1: oracle (remove all malicious nodes), 2: group testing 
 MODE_list = [2]  
 # 0: permutation attack, 1: random labels, 2: 1->7 label flip
-attack_list = [0]
+attack_list = [2]
 total_MC_it = 1
-n_malicious_list = [2]
+n_malicious_list = [3]
 
 [Data]
 val_size = 100

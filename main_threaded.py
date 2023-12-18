@@ -15,59 +15,32 @@ import logging
 from collections import defaultdict
 import time
 import json
-import subprocess
 from itertools import product
 
 # https://stackoverflow.com/questions/6974695/python-process-pool-non-daemonic#:~:text=As%20of%20Python,answer%20by%20jfs
-from concurrent.futures import ProcessPoolExecutor as Pool
 import pickle
 
 # methods
 import data_preprocessing.data_loader as dl
 import methods.fedavg as fedavg
 from models.logistic_regression import logistic_regression
+from models.eff_net import efficient_net
 from data_preprocessing.data_poisoning import flip_label, random_labels, permute_labels
-from models.resnet import resnet56, resnet18
-from models.convnet import convnetwork
 from defence.group_test import Group_Test
+import torch.multiprocessing as mp
+from torch.multiprocessing import set_start_method
 
 
 # Helper Functions
-def init_process(q, Client):
-    set_random_seed()
-    global client
-    ci = q.get()
-    client = Client(ci[0], ci[1])
+def local_training(clients):
+    result = []
+    for client in clients:
+        result.append(client.run())
+    return result 
 
-
-def run_clients(received_info):
-    try:
-        return client.run(received_info)
-    except KeyboardInterrupt:
-        logging.info("exiting")
-        return None
-
-
-def allocate_clients_to_threads(n_rounds, n_threads, n_clients):
-    mapping_dict = defaultdict(list)
-    for round in range(n_rounds):
-        num_clients = n_clients
-        client_list = list(range(num_clients))
-        if num_clients > 0:
-            idxs = [[] for i in range(n_threads)]
-            remaining_clients = num_clients
-            thread_idx = 0
-            client_idx = 0
-            while remaining_clients > 0:
-                idxs[thread_idx].extend([client_idx])
-
-                remaining_clients -= 1
-                thread_idx = (thread_idx + 1) % n_threads
-                client_idx += 1
-            for c, l in enumerate(idxs):
-                mapping_dict[c].append(l)
-    return mapping_dict
-
+def update_global_model(clients, server_model):
+    for client in clients:
+        client.load_model(server_model)
 
 # Setup Functions
 def set_random_seed(seed=1):
@@ -127,7 +100,7 @@ def load_model(mc_iteration, index_of_nm):
 
 
 if __name__ == "__main__":
-    cfg_path = "./cfg_files/cfg_cifar.toml"
+    cfg_path = "./cfg_files/cfg_mnist.toml"
     with open(cfg_path, "r") as file:
         cfg = DotMap(toml.load(file))
 
@@ -368,10 +341,12 @@ if __name__ == "__main__":
                 #         Choose Model and FL protocol
                 # -----------------------------------------
                 if "cifar" in cfg.Data.data_dir:
-                    Model = resnet18
+                    Model = efficient_net
+                    model_name = "efficientnet"
                     # Model = convnetwork
                 elif "mnist" in cfg.Data.data_dir:
                     Model = logistic_regression
+                    model_name = "logistic_regression"
 
                 # Pick FL method
                 Server = fedavg.Server
@@ -385,6 +360,7 @@ if __name__ == "__main__":
                     "test_data": server_test_dl,
                     "model_type": Model,
                     "num_classes": cfg.Data.n_classes,
+                    "model_name": model_name
                 }
                 server_args = DotMap()
                 server_args.n_threads = cfg.Sim.n_threads
@@ -409,22 +385,16 @@ if __name__ == "__main__":
                 # -----------------------------------------
                 #               Setup Clients
                 # -----------------------------------------
-                mapping_dict = allocate_clients_to_threads(
-                    cfg.ML.communication_rounds, cfg.Sim.n_threads, cfg.Sim.n_clients
-                )
                 client_dict = [
                     {
-                        "train_data": [
-                            train_data_local_dict[j] for j in mapping_dict[i][0]
-                        ],
+                        "idx": i,
+                        "train_data": train_data_local_dict[i],
                         "device": "cuda:{}".format(i % torch.cuda.device_count())
-                        if torch.cuda.is_available()
-                        else "cpu",
-                        "client_map": mapping_dict[i],
+                        if torch.cuda.is_available() else "cpu",
                         "model_type": Model,
                         "num_classes": cfg.Data.n_classes,
                     }
-                    for i in range(cfg.Sim.n_threads)
+                    for i in range(cfg.Sim.n_clients)
                 ]
                 # init nodes
                 client_args = DotMap()
@@ -434,9 +404,7 @@ if __name__ == "__main__":
                 client_args.momentum = cfg.ML.momentum
                 client_args.wd = cfg.ML.wd
 
-                client_info = Queue()
-                for i in range(cfg.Sim.n_threads):
-                    client_info.put((client_dict[i], client_args))
+                clients = [Client(client_dict[i], client_args) for i in range(cfg.Sim.n_clients)]
 
                 # -----------------------------------------
                 #          Make Group Test Object
@@ -457,6 +425,7 @@ if __name__ == "__main__":
                     gt = Group_Test(
                         cfg.Sim.n_clients,
                         cfg.GT.n_tests,
+                        cfg.Data.n_classes,
                         prevalence,
                         threshold_dec,
                         min_acc=0,
@@ -479,14 +448,14 @@ if __name__ == "__main__":
                 #    sim_cos_labels = []
                 #    sim_cos_flattened = []
                 #    sim_pca = []
-                with Pool(
-                    max_workers=cfg.Sim.n_threads,
-                    initializer=init_process,
-                    initargs=(client_info, Client),
-                ) as pool:
+                with mp.Pool(cfg.Sim.n_threads) as p:
+                    client_splits = np.array_split(clients, cfg.Sim.n_threads)
+                    
                     for r in range(start_round, cfg.ML.communication_rounds):
                         round_start = time.time()
-
+                        
+                        update_global_model(clients, server_outputs) # set the new server model
+                        
                         # Store the server model before GT to be used in the other loops
                         if (
                             (not checkpoint_exists[index_of_nm][monte_carlo_iterr])
@@ -496,7 +465,7 @@ if __name__ == "__main__":
                             checkpoint_exists[index_of_nm][
                                 monte_carlo_iterr
                             ] = save_model(
-                                server_outputs[0], monte_carlo_iterr, index_of_nm
+                                server_outputs, monte_carlo_iterr, index_of_nm
                             )
                             checkpoint_model_statedict = load_model(
                                 monte_carlo_iterr, index_of_nm
@@ -509,10 +478,8 @@ if __name__ == "__main__":
                         # -----------------------------------------
                         #         Perform local training
                         # -----------------------------------------
-                        client_outputs = pool.map(run_clients, server_outputs)
-                        client_outputs = [
-                            c for sublist in client_outputs for c in sublist
-                        ]
+                        client_outputs = p.map(local_training, client_splits)
+                        client_outputs = [c for sublist in client_outputs for c in sublist]
                         client_outputs.sort(key=lambda tup: tup["client_index"])
 
                         if no_defence:
@@ -554,21 +521,10 @@ if __name__ == "__main__":
                                 DEC = np.zeros((1, cfg.Sim.n_clients), dtype=np.uint8)
                             elif r == cfg.GT.group_test_round:
                                 if noiseless_gt is True:
-                                    (
-                                        group_accuracies,
-                                        prec,
-                                        rec,
-                                        f1,
-                                    ) = gt.get_group_accuracies(client_outputs, server)
+                                    group_accuracies, prec, rec, f1 = gt.get_group_accuracies(client_outputs, server)
                                     DEC = gt.noiseless_group_test(syndrome)
                                 else:
-                                    (
-                                        group_accuracies,
-                                        prec,
-                                        rec,
-                                        f1,
-                                    ) = gt.get_group_accuracies(client_outputs, server)
-
+                                    group_accuracies, prec, rec, f1 = gt.get_group_accuracies(client_outputs, server)
                                     print(f"Group accuracies: {group_accuracies}")
 
                                     if ATTACK < 2:

@@ -14,44 +14,22 @@ class Base_Client:
     """Base functionality for client"""
 
     def __init__(self, client_dict, args):
-        self.train_data = client_dict["train_data"]
+        self.client_index = client_dict["idx"]
+        self.train_dataloader = client_dict["train_data"]
         self.device = client_dict["device"]
         self.model_type = client_dict["model_type"]
         self.num_classes = client_dict["num_classes"]
         self.epochs = args.epochs
         self.batch_size = args.batch_size
         self.round = 0
-        self.client_map = client_dict["client_map"]
-        self.train_dataloader = None
-        self.client_index = None
-
-    def load_client_state_dict(self, server_state_dict: OrderedDict):
-        """Load global model
-
-        Args:
-            server_state_dict (OrderedDict): global model
-        """
-        # If you want to customize how to state dict is loaded you can do so here
-        self.model.load_state_dict(server_state_dict)
-
-    def run(self, received_info):
-
-        client_results = []
-        for dataset_idx, client_idx in enumerate(self.client_map[self.round]):
-            self.load_client_state_dict(received_info)
-            self.train_dataloader = self.train_data[dataset_idx]
-            self.client_index = client_idx
-            num_samples = len(self.train_dataloader) * self.batch_size
-
-            weights = self.train_model()
-            client_results.append(
-                {
-                    "weights": copy.deepcopy(weights),
-                    "num_samples": num_samples,
-                    "client_index": self.client_index,
-                }
-            )
-
+    
+    def load_model(self, server_model):
+        self.model.load_state_dict(copy.deepcopy(server_model))
+        
+    def run(self):
+        num_samples = len(self.train_dataloader)
+        weights = self.train_model()
+        client_results = {"weights": copy.deepcopy(weights), "num_samples": num_samples,"client_index": self.client_index}
         self.round += 1
         return client_results
 
@@ -187,6 +165,7 @@ class Base_Server:
         self.device = "cuda:{}".format(torch.cuda.device_count() - 1) if torch.cuda.is_available() else "cpu"
         self.model_type = server_dict["model_type"]
         self.num_classes = server_dict["num_classes"]
+        self.model_name = server_dict["model_name"]
         self.acc = 0.0
         self.round = 0
         self.n_threads = args.n_threads
@@ -222,7 +201,7 @@ class Base_Server:
         return server_outputs, acc, cf_matrix
 
     def start(self):
-        return [self.model.cpu().state_dict() for x in range(self.n_threads)]
+        return self.model.cpu().state_dict() 
 
     def aggregate_models(self, client_info, update_server=True):
         """Server aggregation of client models
@@ -249,9 +228,9 @@ class Base_Server:
             # update server model with the client average
             self.model.load_state_dict(ssd)
             # return a copy of the aggregated model
-            return [self.model.cpu().state_dict() for x in range(self.n_threads)]
+            return self.model.cpu().state_dict() 
         else:
-            return [ssd for x in range(self.n_threads)]
+            return ssd 
 
     def GM_aggregation(self, client_info):
         """
@@ -304,7 +283,12 @@ class Base_Server:
         y_pred = []
         with torch.no_grad():
             for batch_idx, (x, target) in enumerate(data_loader):
+                if batch_idx >= 50:
+                    break
+        
+        
                 x = x.to(self.device)
+                
                 target = target.to(self.device)
                 if eval_model is None:
                     pred = self.model(x)
@@ -364,5 +348,6 @@ class Base_Server:
         )
         # number of correct predictions from total samples
         acc2 = (true_pos.sum()) / tot
+    
 
         return acc, cf_matrix, class_prec, class_recall, class_f1

@@ -8,8 +8,7 @@ MODE_list = [2]
 # 0: permutation attack, 1: random labels, 2: 1->7 label flip
 attack_list = [2]
 total_MC_it = 5
-n_malicious_list = [0,1,2]
-#n_malicious_list = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 0]
+n_malicious_list = [3]
 PCA_simulation = false
 
 [Data]
@@ -33,7 +32,7 @@ batch_size_list = [128]
 
 [GT]
 n_tests = 8#4#8,10
-group_test_round = 5
+group_test_round = 1
 test_threshold = 0.96 # GT threshold
 crossover_probability_list = [0.05]
 #prevalence = 0.1
