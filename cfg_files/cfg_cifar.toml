@@ -4,11 +4,11 @@
 n_threads = 15
 n_clients = 15 # 15
 # 0: no defence (keep the malicous nodes), 1: oracle (remove all malicious nodes), 2: group testing, 3: noiseless group testing, 4: GM_aggregation
-MODE_list = [2]  
+MODE_list = [0, 1, 4]  
 # 0: permutation attack, 1: random labels, 2: 1->7 label flip
 attack_list = [2]
 total_MC_it = 5 # 3,5 
-n_malicious_list = [5, 2, 4, 0]
+n_malicious_list = [0,1,2,3,4,5]
 PCA_simulation = false
 
 [PCA]

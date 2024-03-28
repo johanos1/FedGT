@@ -139,7 +139,7 @@ if __name__ == "__main__":
         dtype=np.uint8,
     )
 
-    cfg_path = "./cfg_files/cfg_mnist.toml"
+    cfg_path = "./cfg_files/cfg_cifar.toml"
     with open(cfg_path, "r") as file:
         cfg = DotMap(toml.load(file))
     
