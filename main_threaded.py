@@ -27,6 +27,7 @@ from models.logistic_regression import logistic_regression
 from models.eff_net import efficient_net
 from data_preprocessing.data_poisoning import flip_label, random_labels, permute_labels
 from defence.group_test import Group_Test
+from defence.qi_test import QI_Test
 import torch.multiprocessing as mp
 from torch.multiprocessing import set_start_method
 
@@ -161,7 +162,7 @@ if __name__ == "__main__":
             cfg.GT.BCJR_step_threshold,
         ).tolist()
 
-        if cfg.Sim.PCA_simulation == True:
+        if cfg.Sim.PCA_simulation:
             no_PCA_components = 4
             sim_result["no_pca_comp"] = no_PCA_components
             assert MODE == 2, "Only Mode 2 is supported for PCA sims!"
@@ -185,7 +186,11 @@ if __name__ == "__main__":
         sim_result["epochs"] = epochs
         sim_result["val_size"] = cfg.Data.val_size
         sim_result["test_threshold"] = cfg.GT.test_threshold
+        sim_result["QI_threshold"] = cfg.GT.QI_threshold
+        sim_result["QI_value"] = cfg.GT.QI_value
         sim_result["group_test_round"] = cfg.GT.group_test_round
+        sim_result["group_test_round_number"] = cfg.GT.group_test_round_number
+        sim_result["group_test_round_distance"] = cfg.GT.group_test_round_distance
         sim_result["batch_size"] = batch_size
         sim_result["alpha"] = alpha
         sim_result["n_malicious"] = n_malicious
@@ -450,7 +455,13 @@ if __name__ == "__main__":
                 #    sim_pca = []
                 with mp.Pool(cfg.Sim.n_threads) as p:
                     client_splits = np.array_split(clients, cfg.Sim.n_threads)
-                    
+
+                    # variables for QI testing
+                    all_group_accuracies = np.zeros((cfg.GT.group_test_round_number, cfg.GT.n_tests))
+                    all_prec = group_accuracies.copy()
+                    all_rec = group_accuracies.copy()
+                    all_f1 = group_accuracies.copy()
+
                     for r in range(start_round, cfg.ML.communication_rounds):
                         round_start = time.time()
                         
@@ -517,14 +528,23 @@ if __name__ == "__main__":
                             # -----------------------------------------
                             #           Group Testing
                             # -----------------------------------------
+                            test_rounds = np.array([np.array([idx,i]) for idx, i in enumerate(range(cfg.GT.group_test_round, cfg.GT.group_test_round + cfg.GT.group_test_number * cfg.GT.group_test_distance, cfg.GT.group_test_distance))])
                             if r < cfg.GT.group_test_round:
                                 DEC = np.zeros((1, cfg.Sim.n_clients), dtype=np.uint8)
-                            elif r == cfg.GT.group_test_round:
+                            elif r in test_rounds[:,1]:
                                 if noiseless_gt is True:
                                     group_accuracies, prec, rec, f1 = gt.get_group_accuracies(client_outputs, server)
+                                    all_group_accuracies[]
                                     DEC = gt.noiseless_group_test(syndrome)
                                 else:
                                     group_accuracies, prec, rec, f1 = gt.get_group_accuracies(client_outputs, server)
+
+                                    # save accuracies for QI
+                                    all_group_accuracies[test_rounds[np.where(test_rounds[:,1] == 1)[0][0],0]] = group_accuracies
+                                    all_prec[test_rounds[test_rounds[np.where(test_rounds[:,1] == 1)[0][0],0]]] = prec
+                                    all_rec[test_rounds[test_rounds[np.where(test_rounds[:,1] == 1)[0][0],0]]] = rec
+                                    all_f1[test_rounds[test_rounds[np.where(test_rounds[:,1] == 1)[0][0],0]]] = f1
+
                                     print(f"Group accuracies: {group_accuracies}")
 
                                     if ATTACK < 2:
@@ -559,8 +579,12 @@ if __name__ == "__main__":
                             # -----------------------------------------
                             #               Aggregation
                             # -----------------------------------------
+
+                            # QI test
+                            QI_scores = QI_Test.perform_QI_test(all_group_accuracies)
+                            
                             # If all malicious, just use all
-                            if all_class_malicious == True:
+                            if all_class_malicious:
                                 clients_to_aggregate = client_outputs
                             else:
                                 clients_to_aggregate = [
