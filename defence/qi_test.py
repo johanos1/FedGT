@@ -21,10 +21,42 @@ class QI_Test:
 
     def perform_QI_test(self, group_acc):
 
-        scores = np.zeros((1, self.n_clients), dtype=np.uint8)
+        scores = np.zeros(self.n_clients)
+        for i in range(group_acc.shape[0] - 1):
+            for j in range(group_acc.shape[1]):
 
-        # ToDo write QI logic
-
+                for k in range(group_acc.shape[1]):
+                    if group_acc[i][j] < group_acc[i+1][k] - self.threshold:
+                        # Bad
+                        for u in range(self.n_clients):
+                            if self.parity_check_matrix[j][u]:
+                                if self.value == 'count':
+                                    scores[u] -= 1
+                                elif self.value == 'actual':
+                                    scores[u] = scores[u] + (group_acc[i][j] - group_acc[i+1][k])
+                        # Good
+                        for u in range(self.n_clients):
+                            if self.parity_check_matrix[k][u]:
+                                if self.value == 'count':
+                                    scores[u] += 1
+                                elif self.value == 'actual':
+                                    scores[u] = scores[u] - (group_acc[i][j] - group_acc[i+1][k])
+                # Ugly
+                if group_acc[i][j] < 0 - self.threshold:
+                    for u in range(self.n_clients):
+                        if self.parity_check_matrix[j][u]:
+                            if self.value == 'count':
+                                scores[u] -= 1
+                            elif self.value == 'actual':
+                                scores[u] = scores[u] + group_acc[i][j]
+                if i == group_acc.shape[0] - 2:
+                    if group_acc[i + 1][j] < 0 - self.threshold:
+                        for u in range(self.n_clients):
+                            if self.parity_check_matrix[j][u]:
+                                if self.value == 'count':
+                                    scores[u] -= 1
+                                elif self.value == 'actual':
+                                    scores[u] = scores[u] + group_acc[i+1][j]
         return scores
 
     def _get_test_matrix(self):

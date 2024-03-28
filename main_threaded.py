@@ -582,7 +582,7 @@ if __name__ == "__main__":
 
                             # QI test
                             QI_scores = QI_Test.perform_QI_test(all_group_accuracies)
-                            
+
                             # If all malicious, just use all
                             if all_class_malicious:
                                 clients_to_aggregate = client_outputs
