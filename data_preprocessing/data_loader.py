@@ -7,7 +7,7 @@ import logging
 
 import numpy as np
 import torchvision.transforms as transforms
-from data_preprocessing.datasets import Data_Manager
+from data_preprocessing.datasets import Data_Manager, TabularDataset
 from concurrent.futures import ProcessPoolExecutor
 
 logging.basicConfig()
@@ -83,6 +83,9 @@ def _data_transforms(datadir):
                 transforms.Normalize((0.1307,), (0.3081,)),  # normalize inputs
             ]
         )
+    elif "adult" in datadir:
+        train_transform = None
+        valid_transform = None
 
     return train_transform, valid_transform
 
@@ -187,28 +190,73 @@ def load_partition_data(
         upper_client_number = client_number
 
     data_obj = get_data_object(data_dir, val_size, batch_size)
+    if "adult" in data_dir:
+        from torch.utils.data import DataLoader
+        server_val_dl = DataLoader(data_obj.valid_dataset, batch_size=batch_size)
+        server_val_dl.dataset.target = server_val_dl.dataset.targets
+        val_data_num = len(server_val_dl.dataset)
+        
+        server_test_dl = DataLoader(data_obj.test_dataset, batch_size=batch_size)
+        test_data_num = len(server_test_dl.dataset)
+        
+        client_data_num = dict()
+        client_dl_dict = dict()
+        class_num, net_dataidx_map = partition_data(
+            data_obj, partition_method, upper_client_number, partition_alpha
+        )
+        
+        
+        for client_idx in range(client_number):
+            dataidxs = net_dataidx_map[client_idx]
+            local_data_num = len(dataidxs)
 
-    # create data for server
-    server_val_dl = data_obj.get_validation_dl()
-    val_data_num = len(server_val_dl.dataset)
+            temp_data = TabularDataset(data_obj.train_dataset.data[dataidxs], data_obj.train_dataset.targets[dataidxs])
+            temp_data.target = temp_data.targets
+            client_dl = DataLoader(temp_data, batch_size=batch_size)
+            
+            client_data_num[client_idx] = local_data_num
+            client_dl_dict[client_idx] = client_dl
 
-    # get local dataset
-    client_data_num = dict()
-    client_dl_dict = dict()
+            logging.info(
+                "client_idx = %d, local_sample_number = %d, batch_num = %d"
+                % (client_idx, local_data_num, len(client_dl))
+            )
+        
+        record_net_data_stats(server_val_dl, server_test_dl, client_dl_dict)
 
-    server_test_dl = data_obj.get_test_dl()
-    # Start looking at data for clients
-    class_num, net_dataidx_map = partition_data(
-        data_obj, partition_method, upper_client_number, partition_alpha
-    )
+        return (
+            val_data_num,
+            test_data_num,
+            server_val_dl,
+            server_test_dl,
+            client_data_num,
+            client_dl_dict,
+            class_num,
+        )
 
-    test_data_num = len(server_test_dl.dataset)
+        
+    else:
+        # create data for server
+        server_val_dl = data_obj.get_validation_dl()
+        val_data_num = len(server_val_dl.dataset)
+
+        # get local dataset
+        client_data_num = dict()
+        client_dl_dict = dict()
+
+        server_test_dl = data_obj.get_test_dl()
+        # Start looking at data for clients
+        class_num, net_dataidx_map = partition_data(
+            data_obj, partition_method, upper_client_number, partition_alpha
+        )
+
+        test_data_num = len(server_test_dl.dataset)
 
     # Ensure all data structures that you pass as arguments are picklable
     import os
 
     with ProcessPoolExecutor(
-        max_workers=np.minimum(client_number, os.cpu_count())
+        max_workers=np.minimum(client_number, 10 )#os.cpu_count())
     ) as executor:
         results = list(
             executor.map(

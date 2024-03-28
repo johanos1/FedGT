@@ -42,6 +42,7 @@ class Base_Client:
             batch_loss = []
             for batch_idx, (images, labels) in enumerate(self.train_dataloader):
                 # logging.info(images.shape)
+                labels=labels.type(torch.LongTensor)
                 images, labels = images.to(self.device), labels.to(self.device)
                 self.optimizer.zero_grad()
                 log_probs = self.model(images)
@@ -78,6 +79,8 @@ class Base_Client:
         # No training takes place here
         with torch.no_grad():
             for batch_idx, (x, target) in enumerate(self.train_dataloader):
+                target.type(torch.LongTensor)
+                x.type(torch.LongTensor)
                 x = x.to(self.device)
                 target = target.to(self.device)
                 pred = self.model(x)
@@ -163,12 +166,13 @@ class Base_Server:
         self.val_data = server_dict["val_data"]
         self.test_data = server_dict["test_data"]
         self.device = "cuda:{}".format(torch.cuda.device_count() - 1) if torch.cuda.is_available() else "cpu"
-        self.model_type = server_dict["model_type"]
+        self.model = server_dict["model"]
         self.num_classes = server_dict["num_classes"]
         self.acc = 0.0
         self.round = 0
         self.n_threads = args.n_threads
         self.aggregation_method = args.aggregation
+    
 
     def run(self, received_info: List[OrderedDict]) -> List[OrderedDict]:
         """Aggregater client models and evaluate accuracy
@@ -284,7 +288,8 @@ class Base_Server:
             for batch_idx, (x, target) in enumerate(data_loader):
                 if batch_idx >= 50:
                     break
-        
+                x.type(torch.LongTensor)
+                target.type(torch.LongTensor)      
         
                 x = x.to(self.device)
                 
