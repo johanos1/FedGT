@@ -37,7 +37,7 @@ def local_training(clients):
     result = []
     for client in clients:
         result.append(client.run())
-    return result 
+    return result
 
 def update_global_model(clients, server_model):
     for client in clients:
@@ -458,15 +458,15 @@ if __name__ == "__main__":
 
                     # variables for QI testing
                     all_group_accuracies = np.zeros((cfg.GT.group_test_round_number, cfg.GT.n_tests))
-                    all_prec = group_accuracies.copy()
-                    all_rec = group_accuracies.copy()
-                    all_f1 = group_accuracies.copy()
+                    all_prec = all_group_accuracies.copy()
+                    all_rec = all_group_accuracies.copy()
+                    all_f1 = all_group_accuracies.copy()
 
                     for r in range(start_round, cfg.ML.communication_rounds):
                         round_start = time.time()
-                        
+
                         update_global_model(clients, server_outputs) # set the new server model
-                        
+
                         # Store the server model before GT to be used in the other loops
                         if (
                             (not checkpoint_exists[index_of_nm][monte_carlo_iterr])
@@ -514,7 +514,7 @@ if __name__ == "__main__":
                                     client_outputs, server, no_PCA_components
                                 )
                                 sim_result["cosine_similarity_per_label"][
-                                    monte_carlo_iterr, r, :, :
+                                monte_carlo_iterr, r, :, :
                                 ] = cos_sim
                                 sim_result["cosine_similarity_model"][
                                     monte_carlo_iterr, r, :
@@ -528,30 +528,29 @@ if __name__ == "__main__":
                             # -----------------------------------------
                             #           Group Testing
                             # -----------------------------------------
-                            test_rounds = np.array([np.array([idx,i]) for idx, i in enumerate(range(cfg.GT.group_test_round, cfg.GT.group_test_round + cfg.GT.group_test_number * cfg.GT.group_test_distance, cfg.GT.group_test_distance))])
-                            if r < cfg.GT.group_test_round:
+                            test_rounds = np.array([np.array([idx, i]) for idx, i in enumerate(range(cfg.GT.group_test_round, cfg.GT.group_test_round + cfg.GT.group_test_round_number * cfg.GT.group_test_round_distance, cfg.GT.group_test_round_distance))])
+                            if r not in test_rounds[:, 1]:
                                 DEC = np.zeros((1, cfg.Sim.n_clients), dtype=np.uint8)
-                            elif r in test_rounds[:,1]:
+                            else:
                                 if noiseless_gt is True:
                                     group_accuracies, prec, rec, f1 = gt.get_group_accuracies(client_outputs, server)
-                                    all_group_accuracies[]
                                     DEC = gt.noiseless_group_test(syndrome)
                                 else:
                                     group_accuracies, prec, rec, f1 = gt.get_group_accuracies(client_outputs, server)
-
-                                    # save accuracies for QI
-                                    all_group_accuracies[test_rounds[np.where(test_rounds[:,1] == 1)[0][0],0]] = group_accuracies
-                                    all_prec[test_rounds[test_rounds[np.where(test_rounds[:,1] == 1)[0][0],0]]] = prec
-                                    all_rec[test_rounds[test_rounds[np.where(test_rounds[:,1] == 1)[0][0],0]]] = rec
-                                    all_f1[test_rounds[test_rounds[np.where(test_rounds[:,1] == 1)[0][0],0]]] = f1
-
-                                    print(f"Group accuracies: {group_accuracies}")
 
                                     if ATTACK < 2:
                                         DEC = gt.perform_group_test(group_accuracies)
                                     elif ATTACK == 2:
                                         DEC = gt.perform_group_test(rec[:, src])
                                     print(f"Surviving: {DEC}")
+
+                                # save accuracies for QI
+                                #print(np.where(test_rounds[:,1] == r)[0][0])
+                                #print(test_rounds[np.where(test_rounds[:,1] == r)[0][0]][0])
+                                all_group_accuracies[test_rounds[np.where(test_rounds[:,1] == r)[0][0]][0]] = group_accuracies
+                                all_prec[test_rounds[np.where(test_rounds[:,1] == r)[0][0]][0]] = np.mean(prec, axis=1)
+                                all_rec[test_rounds[np.where(test_rounds[:,1] == r)[0][0]][0]] = np.mean(rec, axis=1)
+                                all_f1[test_rounds[np.where(test_rounds[:,1] == r)[0][0]][0]] = np.mean(f1, axis=1)
 
                                 MD = MD + np.sum(gt.DEC[defective == 1] == 0)
                                 FA = FA + np.sum(gt.DEC[defective == 0] == 1)
@@ -581,7 +580,9 @@ if __name__ == "__main__":
                             # -----------------------------------------
 
                             # QI test
-                            QI_scores = QI_Test.perform_QI_test(all_group_accuracies)
+                            if r > np.max(test_rounds[:,1]):
+                                QItest = QI_Test(cfg.Sim.n_clients, cfg.GT.n_tests, cfg.Data.n_classes, cfg.GT.QI_threshold, cfg.GT.QI_value)
+                                QI_scores = QItest.perform_QI_test(all_group_accuracies)
 
                             # If all malicious, just use all
                             if all_class_malicious:
@@ -661,8 +662,8 @@ if __name__ == "__main__":
                 suffix = f"m-{n_malicious},{cfg.Sim.n_clients}_t-{cfg.GT.n_tests}_e-{epochs}_bs-{batch_size}_alpha-{alpha}_totalMC-{cfg.Sim.total_MC_it}_MODE-{MODE}_prev-{prevalence_sim}_p-{crossover_probability}_att-{ATTACK}.txt"
             sim_title = prefix + suffix
 
-            with open(sim_title, "w") as convert_file:
-                convert_file.write(json.dumps(checkpoint_dict))
+            #with open(sim_title, "w") as convert_file:
+            #    convert_file.write(json.dumps(checkpoint_dict))
         # if not prev_and_cross_sim:
         #     zgjimi = f"The simulation for dataset : {cfg_path[16:21]} for {n_malicious} mal_nodes out of {cfg.Sim.n_clients} clients, MODE {MODE}, ATTACK - {ATTACK}, with PCA - {cfg.Sim.PCA_simulation} is done!"
         # else:

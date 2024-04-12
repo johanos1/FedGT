@@ -148,7 +148,7 @@ class Group_Test:
         class_precision = np.zeros((self.n_tests, self.n_classes))
         class_recall = np.zeros((self.n_tests, self.n_classes))
         class_f1 = np.zeros((self.n_tests, self.n_classes))
-        
+
         model_list = [[[] for j in range(self.n_classes)] for i in range(self.n_tests)]
         for i in range(self.n_tests):
             # np.where gives a tuple where first entry is the list we want
@@ -167,8 +167,8 @@ class Group_Test:
                 class_recall[i, :],
                 class_f1[i, :],
             ) = server.evaluate(test_data=False, eval_model=model)
-            
-            
+
+
             for name, param in model.items():
                 if server.model_name == "efficientnet":
                     if name == "base_model.classifier.weight" or name == "base_model.classifier.bias":
@@ -181,21 +181,19 @@ class Group_Test:
                     weights = param.data.cpu().numpy()
                     for j in range(self.n_classes):
                         if weights.ndim == 1:
-                                weights=np.expand_dims(weights, axis=1)
+                            weights=np.expand_dims(weights, axis=1)
                         model_list[i][j].extend(weights[j,:]) # for each label, we use both bias and weights
-        
+
         model_list_2d = [np.array(sublist) for sublist in model_list] # turn lists into 2D arrays
         model_list_3d = np.stack(model_list_2d, axis=0) # stack along the first axis to create 3D matrix with dim: tests x labels x weights
         pca_features = self.get_pca(model_list_3d)
-        
-        group_acc_2d = np.expand_dims(np.array(group_acc), axis=1)
-        group_recall_2d = np.array(class_recall)
-        group_precision_2d = np.array(class_precision)
-        
-        gt_features = np.concatenate((pca_features, group_acc_2d, group_recall_2d, group_precision_2d), axis=1)
-        
-        self.cluster_test(gt_features)
-                
+
+        #group_acc_2d = np.expand_dims(np.array(group_acc), axis=1)
+        #group_recall_2d = np.array(class_recall)
+        #group_precision_2d = np.array(class_precision)
+        #gt_features = np.concatenate((pca_features, group_acc_2d, group_recall_2d, group_precision_2d), axis=1)
+        #self.cluster_test(gt_features)
+
         return group_acc, class_precision, class_recall, class_f1
 
     def get_pca(self, model_list_3d, verbose = True):
@@ -204,7 +202,7 @@ class Group_Test:
         from sklearn.preprocessing import StandardScaler
         #normalize client outputs to zero mean and std 1
         std_scaler = StandardScaler()
-        
+
         pca_features = np.zeros((self.n_tests,self.n_classes,self.n_pca_components))
         explained_variance = np.zeros((self.n_pca_components, self.n_classes))
         for i in range(self.n_classes):
@@ -214,21 +212,21 @@ class Group_Test:
             pca_components = pca.fit_transform(scaled)
             pca_features[:,i,:] = pca_components
             explained_variance[:,i] = pca.explained_variance_ratio_
-        
+
         if verbose:
             np.set_printoptions(precision=1)
-            
+
             pca_features_1d = pca_features[:,:,0]
-            
+
             print(f"first PCA component (group x label): \n {pca_features_1d}")
             print(f"Explained variance (pca component x label): \n {explained_variance}")
-        
+
         pca_features.reshape(pca_features.shape[0], pca_features.shape[1]*pca_features.shape[2])
         return pca_features
-    
+
     def cluster_test(self, X):
         from sklearn.cluster import DBSCAN
-        
+
         db = DBSCAN(eps=0.3, min_samples=10).fit(X)
         labels = db.labels_
 

@@ -4,7 +4,7 @@
 n_threads = 5
 n_clients = 15 # 15
 # 0: no defence (keep the malicous nodes), 1: oracle (remove all malicious nodes), 2: group testing, 3: noiseless group testing, 4: GM_aggregation
-MODE_list = [2]  
+MODE_list = [2]
 # 0: permutation attack, 1: random labels, 2: 1->7 label flip
 attack_list = [2]
 total_MC_it = 5
@@ -15,7 +15,7 @@ PCA_simulation = false
 val_size = 100
 partition_method = "homo"  # homo, hetero
 data_dir = "data/cifar10"
-alpha_list = [1e4] 
+alpha_list = [1e4]
 n_classes = 10
 
 [ML]
@@ -26,13 +26,13 @@ lr = 0.05
 momentum = 0.9
 wd = 0.001
 communication_rounds = 50
-epochs_list = [5] 
+epochs_list = [5]
 batch_size_list = [128]
 
 
 [GT]
 n_tests = 8#4#8,10
-group_test_round = 1
+group_test_round = 0
 group_test_round_number = 3
 group_test_round_distance = 1
 QI_threshold = 0
@@ -48,12 +48,3 @@ manual_params = false
 BCJR_min_threshold = -0.1
 BCJR_max_threshold = 0.801
 BCJR_step_threshold = 0.1
-
-
-
-
-
-
-    
-    
-    
