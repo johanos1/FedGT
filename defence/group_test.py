@@ -124,7 +124,7 @@ class Group_Test:
             self.LLRO,
             self.DEC,
         )
-        return self.DEC
+        return self.DEC, self.LLRO
 
     def noiseless_group_test(self, syndrome):
 

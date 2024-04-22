@@ -285,7 +285,15 @@ if __name__ == "__main__":
         P_FA = np.zeros(len(threshold_vec))
         P_MD = np.zeros(len(threshold_vec))
 
+        run = 0
         for thres_indx, threshold_dec in enumerate(threshold_vec):
+
+            # to ensure it runs only once (gives error in 2nd round)
+            if run == 1:
+                print("End of Experiment")
+                break
+            run += 1
+
             logging.info("Starting with threshold_dec : {}".format(threshold_dec))
             FA = 0
             MD = 0
@@ -538,11 +546,16 @@ if __name__ == "__main__":
                                 else:
                                     group_accuracies, prec, rec, f1 = gt.get_group_accuracies(client_outputs, server)
 
+                                    # DEC is binary, LLRO are likelihoods
                                     if ATTACK < 2:
-                                        DEC = gt.perform_group_test(group_accuracies)
+                                        DEC, LLRO = gt.perform_group_test(group_accuracies)
                                     elif ATTACK == 2:
-                                        DEC = gt.perform_group_test(rec[:, src])
+                                        DEC, LLRO = gt.perform_group_test(rec[:, src])
                                     print(f"Surviving: {DEC}")
+
+                                # ToDo
+                                # 2 digit float point accuracies might be insufficient for QI
+                                # alternative solution is to use validation set instead of test set
 
                                 # save accuracies for QI
                                 #print(np.where(test_rounds[:,1] == r)[0][0])
