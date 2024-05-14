@@ -123,6 +123,8 @@ class Group_Test:
                     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1]], 
                 dtype=np.uint8,
             )
+        if parity_check_matrix is None:
+            raise ValueError("No parity check matrix found for the given number of clients and tests.")
         # fmt: on
         return parity_check_matrix
     
@@ -219,7 +221,7 @@ class Group_Test:
         if nm_est == 0:
             prev_est = 0.1
         LLRinput = np.log((1 - prev_est) / prev_est) * np.ones((1, self.n_clients), dtype=np.double)
-        if Neyman_person == False:
+        if Neyman_person is False:
             td = 0.0
         else:
             #DELTA_look_up = [-np.log((1 - prev_est) / prev_est), -1, -1.2, -0.5, 0.0, 0.0] # for nm = 0 (td =0.0), 1, 2, 3, 4, 5
@@ -237,7 +239,7 @@ class Group_Test:
             self.LLRO,
             self.DEC,
         )
-        if Neyman_person == False:
+        if Neyman_person is False:
             idx_sort = np.argsort(self.LLRO)
             if nm_est != 0:
                 self.DEC[0, idx_sort[:, :nm_est]] = 1
@@ -335,7 +337,7 @@ class Group_Test:
                 group.append(client_models[idx])
 
             # aggregation returns a list so pick the (only) item
-            model = server.aggregate_models(group, update_server=False)[0]
+            model = server.aggregate_models(group, update_server=False)
             # note, aside from accuracy, we have access to precision, recall, and f1 score for each class
             (
                 group_acc[i],
@@ -383,7 +385,7 @@ class Group_Test:
                 group.append(client_models[idx])
 
             # aggregation returns a list so pick the (only) item
-            group_model = server.aggregate_models(group, update_server=False)[0]
+            group_model = server.aggregate_models(group, update_server=False)
             
             #sim_cos.append(sim_obj(server_model, torch.flatten(group_model["fc.weight"])-server_model).detach().numpy())
             tmp_matrix.append(sim_obj(server_model, group_model[str_name]-server_model).detach().numpy())

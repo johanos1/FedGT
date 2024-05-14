@@ -25,51 +25,27 @@ import data_preprocessing.data_loader as dl
 import methods.fedavg as fedavg
 from models.logistic_regression import logistic_regression
 from data_preprocessing.data_poisoning import flip_label, random_labels, permute_labels
-from models.resnet import resnet56, resnet18
-from models.convnet import convnetwork
-from models.eff_net import efficient_net_lite, efficient_net
+from models.resnet import resnet18
+from models.eff_net import efficient_net
 from defence.group_test import Group_Test
-import sys
 import toml
 from dotmap import DotMap
+
+import torch.multiprocessing as mp
+from torch.multiprocessing import set_start_method
 
 check_for_stupid_error = 0
 
 # Helper Functions
-def init_process(q, Client):
-    set_random_seed()
-    global client
-    ci = q.get()
-    client = Client(ci[0], ci[1])
+def local_training(clients):
+    result = []
+    for client in clients:
+        result.append(client.run())
+    return result 
 
-
-def run_clients(received_info):
-    try:
-        return client.run(received_info)
-    except KeyboardInterrupt:
-        logging.info("exiting")
-        return None
-
-def allocate_clients_to_threads(n_rounds, n_threads, n_clients):
-    mapping_dict = defaultdict(list)
-    for round in range(n_rounds):
-
-        num_clients = n_clients
-        client_list = list(range(num_clients))
-        if num_clients > 0:
-            idxs = [[] for i in range(n_threads)]
-            remaining_clients = num_clients
-            thread_idx = 0
-            client_idx = 0
-            while remaining_clients > 0:
-                idxs[thread_idx].extend([client_idx])
-
-                remaining_clients -= 1
-                thread_idx = (thread_idx + 1) % n_threads
-                client_idx += 1
-            for c, l in enumerate(idxs):
-                mapping_dict[c].append(l)
-    return mapping_dict
+def update_global_model(clients, server_model):
+    for client in clients:
+        client.load_model(server_model)
 
 
 # Setup Functions
@@ -125,38 +101,7 @@ def load_model(mc_iteration, index_of_nm):
 
 if __name__ == "__main__":
 
-    parity_check_matrix = np.array(
-        [
-            [1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
-            [0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
-            [0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0],
-            [0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0],
-            [0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0],
-            [0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0],
-            [0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0],
-            [0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1],
-        ],
-        dtype=np.uint8,
-    )
-    
-    # parity_check_matrix = np.array(
-    #             [
-    #                 [1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    #                 [0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    #                 [0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    #                 [0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
-    #                 [0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
-    #                 [0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
-    #                 [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0],
-    #                 [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0],
-    #                 [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0],
-    #                 [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0],
-    #                 [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0],
-    #                 [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1]], 
-    #             dtype=np.uint8,
-    #         )
-
-    cfg_path = "./cfg_files/cfg_isic.toml"
+    cfg_path = "./cfg_files/cfg_cifar.toml"
     with open(cfg_path, "r") as file:
         cfg = DotMap(toml.load(file))
     
@@ -166,7 +111,10 @@ if __name__ == "__main__":
     sim_result = {}
     prev_and_cross_sim = cfg.GT.manual_params
     logging.info(f"The value of prevalence simulation is {prev_and_cross_sim}")
-
+    
+    # if no key is given, make sure we are using all clients
+    n_clients_total = cfg.Sim.n_clients_total if "n_clients_total" in cfg.Sim else cfg.Sim.n_clients
+        
     if not prev_and_cross_sim:
         assert len(cfg.GT.crossover_probability_list) == 1, "crossover_probability_list should be of length 1"
         assert len(cfg.GT.prevalence_list) == 1, "prevalence_list should be of length 1"
@@ -213,10 +161,6 @@ if __name__ == "__main__":
                 src = 0
                 target = 1
         
-        #zgjimi = f"Mismatched: The simulation for {n_malicious} mal_nodes, prev {prevalence_sim} and cross_prop {crossover_probability} is done!" 
-        #commando_uck = f'echo "{zgjimi}" | mail -s "Simulation done!" marvin.xhemrishi@tum.de'
-        #coje = subprocess.call(commando_uck, shell = True)
-        
         ## Lambda
         threshold_vec = np.arange(
             cfg.GT.BCJR_min_threshold,
@@ -225,7 +169,7 @@ if __name__ == "__main__":
         ).tolist()        
 
         no_PCA_components = cfg.PCA.no_comp
-        if cfg.Sim.PCA_simulation == True:
+        if cfg.Sim.PCA_simulation is True:
             print(f"Number of PCA components = {no_PCA_components}")
             sim_result["no_pca_comp"] = no_PCA_components
             assert MODE == 2, "Only Mode 2 is supported for PCA sims!"
@@ -255,7 +199,7 @@ if __name__ == "__main__":
         sim_result["wd"] = cfg.ML.wd
         sim_result["momentum"] = cfg.ML.momentum
         sim_result["comm_round"] = cfg.ML.communication_rounds
-        sim_result["client_number"] = cfg.Sim.n_clients
+        sim_result["client_number"] = n_clients_total
         sim_result["total_MC_it"] = cfg.Sim.total_MC_it
         sim_result["threshold_vec"] = threshold_vec
         sim_result["group_acc"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, cfg.GT.n_tests))
@@ -263,7 +207,7 @@ if __name__ == "__main__":
         sim_result["group_recall"] = np.zeros((len(threshold_vec),cfg.Sim.total_MC_it,cfg.GT.n_tests,cfg.Data.n_classes,))
         sim_result["group_f1"] = np.zeros((len(threshold_vec),cfg.Sim.total_MC_it,cfg.GT.n_tests,cfg.Data.n_classes,))
         sim_result["bsc_channel"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, 2, 2))
-        sim_result["malicious_clients"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, cfg.Sim.n_clients))
+        sim_result["malicious_clients"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, n_clients_total))
         sim_result["DEC"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, cfg.Sim.n_clients))
         sim_result["LLRO"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, cfg.Sim.n_clients))
         sim_result["LLRin"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, cfg.Sim.n_clients))
@@ -274,14 +218,14 @@ if __name__ == "__main__":
         sim_result["accuracy"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, cfg.ML.communication_rounds))
         sim_result["cf_matrix"] = np.zeros((len(threshold_vec),cfg.Sim.total_MC_it,cfg.ML.communication_rounds,cfg.Data.n_classes,cfg.Data.n_classes,))
         sim_result["ss_thres"] = cfg.Test.ss_thres
-        no_clusters = 7 ## HARD_CODED
+        no_clusters = 5 ## HARD_CODED
         sim_result["s_scores"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, no_clusters))
         sim_result["d_scores"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, no_clusters))
         print(f"Silh_score thresh - {cfg.Test.ss_thres}")
         print(f"DELTA - {cfg.GT.DELTA}")
-        if kick_out_clients == True:
+        if kick_out_clients is True:
             sim_result["oracle_kicked_clients"] = [] 
-        if cfg.Sim.PCA_simulation == True:
+        if cfg.Sim.PCA_simulation is True:
             sim_result["cosine_similarity_per_label"] = np.zeros((cfg.Sim.total_MC_it,cfg.ML.communication_rounds,cfg.GT.n_tests,cfg.Data.n_classes))
             sim_result["cosine_similarity_model"] = np.zeros((cfg.Sim.total_MC_it,cfg.ML.communication_rounds,cfg.GT.n_tests))
             sim_result["PCA_components"] = np.zeros((cfg.Sim.total_MC_it,cfg.ML.communication_rounds,cfg.GT.n_tests,no_PCA_components))
@@ -317,24 +261,16 @@ if __name__ == "__main__":
                 # -----------------------------------------
                 #           Create attacks
                 # -----------------------------------------
-                malicious_clients = np.random.permutation(cfg.Sim.n_clients)
+                malicious_clients = np.random.permutation(n_clients_total)
                 malicious_clients = malicious_clients[:n_malicious].tolist()
                 print(f"malicious clients: {malicious_clients} \n")
-                if kick_out_clients == True:
+                if kick_out_clients is True:
                     temp_list = list( set(malicious_clients) & set(cfg.Oracle.which_ones) )
                     assert len(temp_list) == 0, "The which ones list should not intersect malicious clients"
-                defective = np.zeros((1, cfg.Sim.n_clients), dtype=np.uint8)
+                defective = np.zeros((1, n_clients_total), dtype=np.uint8)
                 defective[:, malicious_clients] = 1 # 
-                while(True):
-                    syndy = np.matmul(defective, parity_check_matrix.transpose())
-                    if np.any(syndy[0, :] == 0):
-                        break
-                    malicious_clients = np.random.permutation(cfg.Sim.n_clients)
-                    malicious_clients = malicious_clients[:n_malicious].tolist()
-                    defective = np.zeros((1, cfg.Sim.n_clients), dtype=np.uint8)
-                    defective[:, malicious_clients] = 1
-                attacks = list_of_lists = [[] for i in range(cfg.Sim.n_clients)]
-                for client in range(cfg.Sim.n_clients):
+                attacks = list_of_lists = [[] for i in range(n_clients_total)]
+                for client in range(n_clients_total):
                     if client in malicious_clients:
                         if ATTACK == 0:
                             attacks[client].append((permute_labels,))
@@ -369,7 +305,7 @@ if __name__ == "__main__":
                     cfg.Data.data_dir,
                     cfg.Data.partition_method,
                     alpha,
-                    cfg.Sim.n_clients,
+                    n_clients_total,
                     batch_size,
                     attacks,
                     cfg.Data.val_size,
@@ -380,14 +316,10 @@ if __name__ == "__main__":
                 # -----------------------------------------
                 if "cifar" in cfg.Data.data_dir:
                     Model = resnet18
-                    #Model = efficient_net
-                    #Model = convnetwork
                 elif "mnist" in cfg.Data.data_dir:
                     Model = logistic_regression
                 elif "isic" in cfg.Data.data_dir:
-                    #Model = efficient_net_lite
                     Model = efficient_net
-                    #Model = resnet18
 
                 # Pick FL method
                 Server = fedavg.Server
@@ -396,17 +328,19 @@ if __name__ == "__main__":
                 # -----------------------------------------
                 #               Setup Server
                 # -----------------------------------------
-                server_dict = {
-                    "val_data": server_val_dl,
-                    "test_data": server_test_dl,
-                    "model_type": Model,
-                    "num_classes": cfg.Data.n_classes,
-                }
+                server_dict = DotMap()
+                server_dict.model_type = Model
+                server_dict.val_data = server_val_dl
+                server_dict.test_data = server_test_dl
+                server_dict.num_classes = cfg.Data.n_classes
+
                 server_args = DotMap()
                 server_args.n_threads = cfg.Sim.n_threads
-                server_args.aggregation = "GM" if GM_aggregation == True else "Avg"
-                print(f"Alpha is equal to {alpha} and aggregation method is {server_args.aggregation}")
+                server_args.aggregation = "GM" if GM_aggregation is True else "Avg"
                 server = Server(server_dict, server_args)
+                    
+                print(f"Alpha is equal to {alpha} and aggregation method is {server_args.aggregation}")
+                
                 
                 # get global model to start from
                 index_of_nm = cfg.Sim.n_malicious_list.index(n_malicious)
@@ -422,22 +356,17 @@ if __name__ == "__main__":
                 # -----------------------------------------
                 #               Setup Clients
                 # -----------------------------------------
-                mapping_dict = allocate_clients_to_threads(
-                    cfg.ML.communication_rounds, cfg.Sim.n_threads, cfg.Sim.n_clients
-                )
                 client_dict = [
                     {
-                        "train_data": [
-                            train_data_local_dict[j] for j in mapping_dict[i][0]
-                        ],
+                        "idx": i,
+                        "data_dir": cfg.Data.data_dir,
+                        "train_data": train_data_local_dict[i],
                         "device": "cuda:{}".format(i % torch.cuda.device_count())
-                        if torch.cuda.is_available()
-                        else "cpu",
-                        "client_map": mapping_dict[i],
+                        if torch.cuda.is_available() else "cpu",
                         "model_type": Model,
                         "num_classes": cfg.Data.n_classes,
                     }
-                    for i in range(cfg.Sim.n_threads)
+                    for i in range(n_clients_total)
                 ]
                 # init nodes
                 client_args = DotMap()
@@ -447,9 +376,7 @@ if __name__ == "__main__":
                 client_args.momentum = cfg.ML.momentum
                 client_args.wd = cfg.ML.wd
                 
-                client_info = Queue()
-                for i in range(cfg.Sim.n_threads):
-                    client_info.put((client_dict[i], client_args))
+                clients = [Client(client_dict[i], client_args) for i in range(n_clients_total)]
 
                 # -----------------------------------------
                 #          Make Group Test Object
@@ -475,8 +402,6 @@ if __name__ == "__main__":
                         P_MD_test=P_MD_test,
                     )
                     sim_result["bsc_channel"][thres_indx, monte_carlo_iterr, :, :] = gt.ChannelMatrix
-                    syndrome = np.matmul(defective, gt.parity_check_matrix.transpose())
-                    print(f"Syndrome is {syndrome}")
 
                 # -----------------------------------------
                 #            Main Loop
@@ -484,23 +409,27 @@ if __name__ == "__main__":
                 # each thread will create a client object containing the client information
                 acc = np.zeros((1, cfg.ML.communication_rounds))
                 all_class_malicious = False
-                with Pool(
-                    max_workers=cfg.Sim.n_threads,
-                    initializer=init_process,
-                    initargs=(client_info, Client),
-                ) as pool:
+                malicious_counter = np.zeros((1, n_clients_total))
+                with mp.Pool(cfg.Sim.n_threads) as p:
                     for r in range(start_round, cfg.ML.communication_rounds):
                         round_start = time.time()
                         
-                        # Store the server model before GT to be used in the other loops
-                        #if (not checkpoint_exists[index_of_nm][monte_carlo_iterr]) and (r == cfg.GT.group_test_round) and (not oracle):
-                        #    checkpoint_exists[index_of_nm][monte_carlo_iterr] = save_model(server_outputs[0], monte_carlo_iterr, index_of_nm)
-
+                        # set the new server model in the clients
+                        update_global_model(clients, server_outputs) 
+                        
                         # -----------------------------------------
                         #         Perform local training
                         # -----------------------------------------
-                        client_outputs = pool.map(run_clients, server_outputs)
+                        # randomly sample n_clients from the total clients without replacement
+                        sampled_clients_indices = np.random.choice(n_clients_total, cfg.Sim.n_clients, replace=False)
+                        sampled_clients = [clients[i] for i in sampled_clients_indices]
+                        # assign clients to threads
+                        client_splits = np.array_split(sampled_clients, cfg.Sim.n_threads) 
+                        # perform local training
+                        client_outputs = p.map(local_training, client_splits) 
+                        # flatten the list of lists
                         client_outputs = [c for sublist in client_outputs for c in sublist]
+                        # sort the list of dictionaries by the client index
                         client_outputs.sort(key=lambda tup: tup["client_index"])
 
                         if len(client_outputs) != cfg.Sim.n_clients or len(set([client_outputs[i]["client_index"] for i in range(len(client_outputs))])) != cfg.Sim.n_clients:
@@ -508,8 +437,6 @@ if __name__ == "__main__":
                             print(f"Problem with threads - it happend {check_for_stupid_error + 1} times")
                             check_for_stupid_error = check_for_stupid_error + 1 
                             assert False, "Vari karin o miku!!!"
-                        #else:
-                        #    print("PASS")
 
                         if no_defence:
                             # if no defence, keep all clients
@@ -535,36 +462,24 @@ if __name__ == "__main__":
                                         clients_to_kick_out.append(i)
                                 sim_result["oracle_kicked_clients"].append(clients_to_kick_out)
                         else:
-                            # PCA and Cosine Similarity stuff
-                            if cfg.Sim.PCA_simulation == True:
-                                cos_sim, cos_sim_flatt, pca, pca_variance, pca_variance_ratio, pca_per_label, variance_per_label, variance_ratio_per_label = gt.get_pca_components(client_outputs, server, no_PCA_components, cfg.Data.n_classes)
-                                sim_result["cosine_similarity_per_label"][monte_carlo_iterr, r, :,:] = cos_sim
-                                sim_result["cosine_similarity_model"][monte_carlo_iterr, r, :] = cos_sim_flatt
-                                sim_result["PCA_components"][monte_carlo_iterr, r, :, :] = pca
-                                sim_result["PCA_variance"][monte_carlo_iterr, r, :] = pca_variance
-                                sim_result["PCA_variance_ratio"][monte_carlo_iterr, r, :] = pca_variance_ratio
-                                sim_result["PCA_components_per_label"][monte_carlo_iterr, r, :, :, :] = pca_per_label
-                                sim_result["PCA_variance_per_label"][monte_carlo_iterr, r, :, :] = variance_per_label
-                                sim_result["PCA_variance_ratio_per_label"][monte_carlo_iterr, r, :, :] = variance_ratio_per_label
-                                group_accuracies, prec, rec, f1, loss_values = gt.get_group_accuracies(client_outputs, server, cfg.Data.n_classes)
-                                sim_result["group_acc"][thres_indx, monte_carlo_iterr, r, :] = group_accuracies
-                                sim_result["group_prec"][thres_indx, monte_carlo_iterr, r, :, :] = prec
-                                sim_result["group_recall"][thres_indx, monte_carlo_iterr, r, :, :] = rec
-                                sim_result["group_f1"][thres_indx, monte_carlo_iterr, r, :, :] = f1
-                                sim_result["syndrome"][thres_indx, monte_carlo_iterr] = syndrome[0]
-                                sim_result["loss_per_label"][thres_indx, monte_carlo_iterr, r, :, :] = loss_values ## Check this for later
                             # -----------------------------------------
                             #           Group Testing
                             # -----------------------------------------
+                            # cross silo only performs GT once
+                            cross_silo_gt = r == cfg.GT.group_test_round and n_clients_total == cfg.Sim.n_clients
+                            # cross device performs GT every round after the threshold round
+                            cross_device_gt = r >= cfg.GT.group_test_round and n_clients_total > cfg.Sim.n_clients
+                            
                             if r < cfg.GT.group_test_round:
                                 DEC = np.zeros((1, cfg.Sim.n_clients), dtype=np.uint8)
-                            elif r == cfg.GT.group_test_round:  
+                            elif cross_silo_gt or cross_device_gt:  
+                                syndrome = np.matmul(defective[:,sampled_clients_indices], gt.parity_check_matrix.transpose())
                                 
                                 if noiseless_gt is True:
                                     group_accuracies, prec, rec, f1, loss_value = gt.get_group_accuracies(client_outputs, server, cfg.Data.n_classes)
                                     DEC, LLRoutput = gt.noiseless_group_test(syndrome)
                                     test_values = syndrome
-                                else:
+                                else: 
                                     group_accuracies, prec, rec, f1, loss_value = gt.get_group_accuracies(client_outputs, server, cfg.Data.n_classes)
                                     _, _, pca_components, _, _, pca_per_label, _, _ = gt.get_pca_components(client_outputs, server, no_PCA_components, cfg.Data.n_classes)
                                     sim_result["PCA_components_per_label"][monte_carlo_iterr, :, :, :] = pca_per_label
@@ -579,11 +494,13 @@ if __name__ == "__main__":
                                     elif ATTACK == 2:
                                         test_values, s_scores, d_scores = gt.perform_clustering_and_testing( rec[:, src], pca_per_label[src, :, 0], cfg.Test.ss_thres)
                                         DEC, LLRoutput, LLRinput, td, nm_est = gt.perform_gt(test_values, Neyman_person)
-                                        #DEC, LLRoutput, test_values, LLRinput, td = gt.perform_group_test(rec[:, src], pca_per_label[src, :, 0], cfg.Test.ss_thres, cfg.GT.DELTA)
+                                    
+                                malicious_counter[:, sampled_clients_indices] += DEC
 
-                                MD = MD + np.sum(gt.DEC[defective == 1] == 0)
-                                FA = FA + np.sum(gt.DEC[defective == 0] == 1)
-                                if np.sum(DEC) == DEC.shape[1]: all_class_malicious = True
+                                MD = MD + np.sum(gt.DEC[defective[:, sampled_clients_indices] == 1] == 0)
+                                FA = FA + np.sum(gt.DEC[defective[:, sampled_clients_indices] == 0] == 1)
+                                if np.sum(DEC) == DEC.shape[1]: 
+                                    all_class_malicious = True
                                     
                                 sim_result["group_acc"][thres_indx, monte_carlo_iterr, :] = group_accuracies
                                 sim_result["group_prec"][thres_indx, monte_carlo_iterr, :, :] = prec
@@ -596,14 +513,15 @@ if __name__ == "__main__":
                                 sim_result["nm_est"][thres_indx, monte_carlo_iterr] = nm_est
                                 sim_result["syndrome"][thres_indx, monte_carlo_iterr] = syndrome[0]
                                 sim_result["test_values"][thres_indx, monte_carlo_iterr] = test_values
-                                #### Added this ones #### 
                                 sim_result["s_scores"][thres_indx, monte_carlo_iterr, :] = s_scores
                                 sim_result["d_scores"][thres_indx, monte_carlo_iterr, :] = d_scores
+                                
                             # -----------------------------------------
                             #               Aggregation
                             # -----------------------------------------
                             # If all malicious, just use all
-                            if all_class_malicious == True:
+                            if all_class_malicious is True:
+                                logging.info("All groups are malicious!")
                                 clients_to_aggregate = client_outputs
                             else:
                                 clients_to_aggregate = [
@@ -656,7 +574,7 @@ if __name__ == "__main__":
             checkpoint_dict["PCA_components"] = checkpoint_dict["PCA_components"].tolist()
             checkpoint_dict["s_scores"] = checkpoint_dict["s_scores"].tolist()
             checkpoint_dict["d_scores"] = checkpoint_dict["d_scores"].tolist()
-            if cfg.Sim.PCA_simulation == True:
+            if cfg.Sim.PCA_simulation is True:
                 checkpoint_dict["cosine_similarity_per_label"] = checkpoint_dict["cosine_similarity_per_label"].tolist()
                 checkpoint_dict["cosine_similarity_model"] = checkpoint_dict["cosine_similarity_model"].tolist()
                 checkpoint_dict["PCA_components"] = checkpoint_dict["PCA_components"].tolist()
@@ -673,7 +591,7 @@ if __name__ == "__main__":
                 prefix = prefix_0 + "CIFAR10_"
             elif "isic" in cfg.Data.data_dir:
                 prefix = prefix_0 + "ISIC_"
-            if cfg.Sim.PCA_simulation == True:
+            if cfg.Sim.PCA_simulation is True:
                 if "mnist" in cfg.Data.data_dir:
                     prefix = f"./PCA_results/PCA_{no_PCA_components}_per_round_non_std_loss/MNIST_"
                 elif "cifar" in cfg.Data.data_dir:
@@ -684,7 +602,7 @@ if __name__ == "__main__":
                 suffix = f"m-{n_malicious},{cfg.Sim.n_clients}_t-{cfg.GT.n_tests}_e-{epochs}_bs-{batch_size}_alpha-{alpha}_totalMC-{cfg.Sim.total_MC_it}_MODE-{MODE}_att-{ATTACK}.txt"
             else:
                 suffix = f"m-{n_malicious},{cfg.Sim.n_clients}_t-{cfg.GT.n_tests}_e-{epochs}_bs-{batch_size}_alpha-{alpha}_totalMC-{cfg.Sim.total_MC_it}_MODE-{MODE}_prev-{prevalence_sim}_p-{crossover_probability}_att-{ATTACK}.txt"
-            if kick_out_clients == True:
+            if kick_out_clients is True:
                 suffix = "kicked_" + suffix
             sim_title = prefix + suffix
 

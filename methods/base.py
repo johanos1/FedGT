@@ -30,48 +30,29 @@ class Base_Client:
     """Base functionality for client"""
 
     def __init__(self, client_dict, args):
-        self.train_data = client_dict["train_data"]
+        self.client_index = client_dict["idx"]
+        self.train_dataloader = client_dict["train_data"]
         self.device = client_dict["device"]
         self.model_type = client_dict["model_type"]
         self.num_classes = client_dict["num_classes"]
         self.epochs = args.epochs
         self.batch_size = args.batch_size
         self.round = 0
-        self.client_map = client_dict["client_map"]
-        self.train_dataloader = None
-        self.client_index = None
 
-    def load_client_state_dict(self, server_state_dict: OrderedDict):
+    def load_model(self, server_model):
         """Load global model
 
         Args:
             server_state_dict (OrderedDict): global model
         """
         # If you want to customize how to state dict is loaded you can do so here
-        self.model.load_state_dict(server_state_dict)
+        self.model.load_state_dict(server_model)
+        
 
-    def run(self, received_info):
-
-        client_results = []
-        for dataset_idx, client_idx in enumerate(self.client_map[self.round]):
-            self.load_client_state_dict(received_info)
-            self.train_dataloader = self.train_data[dataset_idx]
-
-            #print(set(self.train_dataloader.dataset.target.tolist()))
-            #print(f"dataidx: {dataset_idx} - client_idx {client_idx}")
-            #generate_histogram(self.train_dataloader.dataset.target.tolist(), self.num_classes, client_idx)
-            self.client_index = client_idx
-            num_samples = len(self.train_dataloader) * self.batch_size
-
-            weights = self.train_model()
-            client_results.append(
-                {
-                    "weights": copy.deepcopy(weights),
-                    "num_samples": num_samples,
-                    "client_index": self.client_index,
-                }
-            )
-
+    def run(self):
+        num_samples = len(self.train_dataloader)
+        weights = self.train_model()
+        client_results = {"weights": copy.deepcopy(weights), "num_samples": num_samples,"client_index": self.client_index}
         self.round += 1
         return client_results
 
@@ -257,7 +238,7 @@ class Base_Server:
         return server_outputs, acc, cf_matrix
 
     def start(self):
-        return [self.model.cpu().state_dict() for x in range(self.n_threads)]
+        return self.model.cpu().state_dict() 
 
     def FedAdam_online(self, client_info, update_server=True):
         """Server aggregation of client models with Adam optimizer (FedOPT idea)
@@ -303,10 +284,10 @@ class Base_Server:
             self.momentum1 = mt #
             self.momentum2 = vt #
             # return a copy of the aggregated model
-            return [self.model.cpu().state_dict() for x in range(self.n_threads)]
+            return self.model.cpu().state_dict() 
         else:
-            return [ssd for x in range(self.n_threads)]
-
+            return ssd
+    
     def FedYogi(self, client_info, update_server=True):
         """Server aggregation of client models with Adam optimizer (FedOPT idea)
 
@@ -352,9 +333,9 @@ class Base_Server:
             self.momentum1 = mt #
             self.momentum2 = vt #
             # return a copy of the aggregated model
-            return [self.model.cpu().state_dict() for x in range(self.n_threads)]
+            return self.model.cpu().state_dict() 
         else:
-            return [ssd for x in range(self.n_threads)]
+            return ssd
 
     def FedAdagrad(self, client_info, update_server=True):
         """Server aggregation of client models with Adam optimizer (FedOPT idea)
@@ -400,9 +381,9 @@ class Base_Server:
             self.momentum1 = mt #
             self.momentum2 = vt #
             # return a copy of the aggregated model
-            return [self.model.cpu().state_dict() for x in range(self.n_threads)]
+            return self.model.cpu().state_dict() 
         else:
-            return [ssd for x in range(self.n_threads)]
+            return ssd
 
     def FedAdam(self, client_info, update_server=True):
         """Server aggregation of client models with Adam optimizer (FedOPT idea)
@@ -427,13 +408,13 @@ class Base_Server:
             Delta[key] = sum([(sd[key].to("cpu") - ssd[key].to("cpu")) * cw[i] for i, sd in enumerate(client_sd)])
         mt = {k: v.clone() for k, v in ssd.items()}
         vt = {k: v.clone() for k, v in ssd.items()}
-        if self.momentum1 == None:
+        if self.momentum1 is None:
             for key in Delta:
                 mt[key] = (1-self.beta_1) * Delta[key]
         else:
             for key in Delta:
                 mt[key] =self.beta_1 * self.momentum1[key] + (1-self.beta_1) * Delta[key] 
-        if self.momentum2 == None:
+        if self.momentum2 is None:
             for key in Delta:
                 vt[key] = self.beta_2 * self.tau ** 2 + (1-self.beta_2)*(Delta[key] **2)
         else:
@@ -450,9 +431,9 @@ class Base_Server:
             self.momentum1 = mt
             self.momentum2 = vt
             # return a copy of the aggregated model
-            return [self.model.cpu().state_dict() for x in range(self.n_threads)]
+            return self.model.cpu().state_dict() 
         else:
-            return [ssd for x in range(self.n_threads)]
+            return ssd
 
 
     def aggregate_models(self, client_info, update_server=True):
@@ -480,9 +461,9 @@ class Base_Server:
             # update server model with the client average
             self.model.load_state_dict(ssd)
             # return a copy of the aggregated model
-            return [self.model.cpu().state_dict() for x in range(self.n_threads)]
+            return self.model.cpu().state_dict() 
         else:
-            return [ssd for x in range(self.n_threads)]
+            return ssd
 
     def GM_aggregation(self, client_info):
         """
@@ -508,7 +489,7 @@ class Base_Server:
         # Update the server model!
         self.model.load_state_dict(ssd)
         # return a copy of the aggregated model
-        return [self.model.cpu().state_dict() for x in range(self.n_threads)]
+        return self.model.cpu().state_dict() 
         
 
     def evaluate(self, test_data=False, eval_model=None):
