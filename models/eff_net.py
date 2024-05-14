@@ -38,7 +38,7 @@ class Baseline(nn.Module):
 def efficient_net_lite(num_classes, pretrained = True, arch_name="efficientnet-lite2"):
     weights_path = None
     if pretrained:
-        weights_path = EfficientnetLite2ModelFile.get_model_file_path()
+        weights_path = EfficientnetLite0ModelFile.get_model_file_path()
     model = Baseline(num_classes, pretrained, arch_name, weights_path)
     
         # Freeze all layers

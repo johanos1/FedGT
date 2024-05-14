@@ -106,6 +106,23 @@ class Group_Test:
                 ],
                 dtype=np.uint8,
             )
+        elif self.n_clients == 30:
+                parity_check_matrix = np.array(
+                [
+                    [1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    [0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    [0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    [0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+                    [0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+                    [0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+                    [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+                    [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0],
+                    [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0],
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0],
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1]], 
+                dtype=np.uint8,
+            )
         # fmt: on
         return parity_check_matrix
     
@@ -186,37 +203,49 @@ class Group_Test:
         )
         return self.DEC, self.LLRO, tests, LLRinput, td
     
-    def perform_gt(self, test_values):
-
+    def perform_gt(self, test_values, Neyman_person=False):
+    
         tests = np.zeros((1, self.n_tests), dtype=np.uint8)
         tests[0, :] = test_values
         #look_up_nm = [0, 1, 2, 3, 3, 4, 5, 5, 5]
-        look_up_nm = [5, 5, 5, 4, 3, 3, 2, 1, 0]
+        if self.n_clients == 15:
+            look_up_nm = [5, 5, 5, 4, 3, 3, 2, 1, 0]
+        elif self.n_clients == 30:
+            look_up_nm = [8, 8, 8, 8, 7, 6, 5, 5, 4, 3, 2, 1, 0]
         nm_est = look_up_nm[np.sum(tests[0, :] == 0)]
-        if nm_est == 0:
-            nm_est = 0.1 * self.n_clients
+        #if nm_est == 0:
+        #    nm_est = 0.1 * self.n_clients
         prev_est = nm_est / self.n_clients
+        if nm_est == 0:
+            prev_est = 0.1
         LLRinput = np.log((1 - prev_est) / prev_est) * np.ones((1, self.n_clients), dtype=np.double)
-        td = 0.0
+        if Neyman_person == False:
+            td = 0.0
+        else:
+            #DELTA_look_up = [-np.log((1 - prev_est) / prev_est), -1, -1.2, -0.5, 0.0, 0.0] # for nm = 0 (td =0.0), 1, 2, 3, 4, 5
+            DELTA_look_up = [-np.log((1 - prev_est) / prev_est), -1, -0.9, -0.5, -0.3, -0.2, 0.0, 0.0, 0.0]
+            DELTA = DELTA_look_up[nm_est]
+            td = np.log((1 - prev_est) / prev_est) + DELTA
         self.fun(
             self.parity_check_matrix,
             LLRinput, #self.LLRi,
             tests,
             self.ChannelMatrix,
-            0.0, #td, #self.threshold_dec,
+            td, #self.threshold_dec,
             self.n_clients,
             self.n_tests,
             self.LLRO,
             self.DEC,
         )
-        idx_sort = np.argsort(self.LLRO)
-        if nm_est != 0.1 * self.n_clients:
-            self.DEC[0, idx_sort[:, :nm_est]] = 1
-            identical_soft = np.where(self.LLRO[0,:] == self.LLRO[0, idx_sort][0, nm_est-1])[0]
-            if len(identical_soft) > 1:
-                self.DEC[0, identical_soft] = 1
-            td = self.LLRO[0, idx_sort][0, nm_est] 
-        return self.DEC, self.LLRO, LLRinput, td
+        if Neyman_person == False:
+            idx_sort = np.argsort(self.LLRO)
+            if nm_est != 0:
+                self.DEC[0, idx_sort[:, :nm_est]] = 1
+                identical_soft = np.where(self.LLRO[0,:] == self.LLRO[0, idx_sort][0, nm_est-1])[0]
+                if len(identical_soft) > 1:
+                    self.DEC[0, identical_soft] = 1
+                td = self.LLRO[0, idx_sort][0, nm_est] 
+        return self.DEC, self.LLRO, LLRinput, td, nm_est
     
     def perform_clustering_and_testing(self, group_acc, group_PCA, ss_thres):
 

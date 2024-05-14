@@ -25,7 +25,7 @@ import data_preprocessing.data_loader as dl
 import methods.fedavg as fedavg
 from models.logistic_regression import logistic_regression
 from data_preprocessing.data_poisoning import flip_label, random_labels, permute_labels
-#from models.resnet import resnet56, resnet18
+from models.resnet import resnet56, resnet18
 from models.convnet import convnetwork
 from models.eff_net import efficient_net_lite, efficient_net
 from defence.group_test import Group_Test
@@ -138,8 +138,25 @@ if __name__ == "__main__":
         ],
         dtype=np.uint8,
     )
+    
+    # parity_check_matrix = np.array(
+    #             [
+    #                 [1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    #                 [0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    #                 [0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    #                 [0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+    #                 [0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+    #                 [0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+    #                 [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+    #                 [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0],
+    #                 [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+    #                 [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0],
+    #                 [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0],
+    #                 [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1]], 
+    #             dtype=np.uint8,
+    #         )
 
-    cfg_path = "./cfg_files/cfg_cifar.toml"
+    cfg_path = "./cfg_files/cfg_isic.toml"
     with open(cfg_path, "r") as file:
         cfg = DotMap(toml.load(file))
     
@@ -251,12 +268,13 @@ if __name__ == "__main__":
         sim_result["LLRO"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, cfg.Sim.n_clients))
         sim_result["LLRin"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, cfg.Sim.n_clients))
         sim_result["td_used"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it))
+        sim_result["nm_est"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it))
         sim_result["syndrome"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, cfg.GT.n_tests))
         sim_result["test_values"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, cfg.GT.n_tests))
         sim_result["accuracy"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, cfg.ML.communication_rounds))
         sim_result["cf_matrix"] = np.zeros((len(threshold_vec),cfg.Sim.total_MC_it,cfg.ML.communication_rounds,cfg.Data.n_classes,cfg.Data.n_classes,))
         sim_result["ss_thres"] = cfg.Test.ss_thres
-        no_clusters = 5 ## HARD_CODED
+        no_clusters = 7 ## HARD_CODED
         sim_result["s_scores"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, no_clusters))
         sim_result["d_scores"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, no_clusters))
         print(f"Silh_score thresh - {cfg.Test.ss_thres}")
@@ -278,6 +296,7 @@ if __name__ == "__main__":
             sim_result["group_f1"] = np.zeros((len(threshold_vec),cfg.Sim.total_MC_it, cfg.ML.communication_rounds, cfg.GT.n_tests, cfg.Data.n_classes,))
             sim_result["loss_per_label"] = np.zeros((len(threshold_vec),cfg.Sim.total_MC_it, cfg.ML.communication_rounds, cfg.GT.n_tests, cfg.Data.n_classes,))
         else:
+            sim_result["PCA_components"] = np.zeros((cfg.Sim.total_MC_it,cfg.GT.n_tests,no_PCA_components))
             sim_result["PCA_components_per_label"] = np.zeros((cfg.Sim.total_MC_it, cfg.Data.n_classes, cfg.GT.n_tests, no_PCA_components))
 
         try:
@@ -360,8 +379,8 @@ if __name__ == "__main__":
                 #         Choose Model and FL protocol
                 # -----------------------------------------
                 if "cifar" in cfg.Data.data_dir:
-                    #Model = resnet18
-                    Model = efficient_net
+                    Model = resnet18
+                    #Model = efficient_net
                     #Model = convnetwork
                 elif "mnist" in cfg.Data.data_dir:
                     Model = logistic_regression
@@ -547,13 +566,19 @@ if __name__ == "__main__":
                                     test_values = syndrome
                                 else:
                                     group_accuracies, prec, rec, f1, loss_value = gt.get_group_accuracies(client_outputs, server, cfg.Data.n_classes)
-                                    _, _, _, _, _, pca_per_label, _, _ = gt.get_pca_components(client_outputs, server, no_PCA_components, cfg.Data.n_classes)
+                                    _, _, pca_components, _, _, pca_per_label, _, _ = gt.get_pca_components(client_outputs, server, no_PCA_components, cfg.Data.n_classes)
                                     sim_result["PCA_components_per_label"][monte_carlo_iterr, :, :, :] = pca_per_label
-                                    if ATTACK < 2:
-                                        DEC, LLRoutput = gt.perform_group_test(group_accuracies)
+                                    sim_result["PCA_components"][monte_carlo_iterr, :, :] = pca_components
+                                    
+                                    Neyman_person=True
+                                    if ATTACK == 0:
+                                        #DEC, LLRoutput = gt.perform_group_test(group_accuracies)
+                                        avg_recall = np.mean(rec, axis=1)
+                                        test_values, s_scores, d_scores = gt.perform_clustering_and_testing(group_accuracies, pca_components[:,0], cfg.Test.ss_thres)
+                                        DEC, LLRoutput, LLRinput, td, nm_est = gt.perform_gt(test_values, Neyman_person)
                                     elif ATTACK == 2:
                                         test_values, s_scores, d_scores = gt.perform_clustering_and_testing( rec[:, src], pca_per_label[src, :, 0], cfg.Test.ss_thres)
-                                        DEC, LLRoutput, LLRinput, td = gt.perform_gt(test_values)
+                                        DEC, LLRoutput, LLRinput, td, nm_est = gt.perform_gt(test_values, Neyman_person)
                                         #DEC, LLRoutput, test_values, LLRinput, td = gt.perform_group_test(rec[:, src], pca_per_label[src, :, 0], cfg.Test.ss_thres, cfg.GT.DELTA)
 
                                 MD = MD + np.sum(gt.DEC[defective == 1] == 0)
@@ -568,6 +593,7 @@ if __name__ == "__main__":
                                 sim_result["LLRO"][thres_indx, monte_carlo_iterr, :] = LLRoutput[0]
                                 sim_result["LLRin"][thres_indx, monte_carlo_iterr, :] = LLRinput[0]
                                 sim_result["td_used"][thres_indx, monte_carlo_iterr] = td
+                                sim_result["nm_est"][thres_indx, monte_carlo_iterr] = nm_est
                                 sim_result["syndrome"][thres_indx, monte_carlo_iterr] = syndrome[0]
                                 sim_result["test_values"][thres_indx, monte_carlo_iterr] = test_values
                                 #### Added this ones #### 
@@ -621,11 +647,13 @@ if __name__ == "__main__":
             checkpoint_dict["LLRO"] = checkpoint_dict["LLRO"].tolist()
             checkpoint_dict["LLRin"] = checkpoint_dict["LLRin"].tolist()
             checkpoint_dict["td_used"] = checkpoint_dict["td_used"].tolist()
+            checkpoint_dict["nm_est"] = checkpoint_dict["nm_est"].tolist()
             checkpoint_dict["syndrome"] = checkpoint_dict["syndrome"].tolist()
             checkpoint_dict["test_values"] = checkpoint_dict["test_values"].tolist()
             checkpoint_dict["malicious_clients"] = checkpoint_dict["malicious_clients"].tolist()
             checkpoint_dict["bsc_channel"] = checkpoint_dict["bsc_channel"].tolist()
             checkpoint_dict["PCA_components_per_label"] = checkpoint_dict["PCA_components_per_label"].tolist()
+            checkpoint_dict["PCA_components"] = checkpoint_dict["PCA_components"].tolist()
             checkpoint_dict["s_scores"] = checkpoint_dict["s_scores"].tolist()
             checkpoint_dict["d_scores"] = checkpoint_dict["d_scores"].tolist()
             if cfg.Sim.PCA_simulation == True:

@@ -46,7 +46,11 @@ def permute_labels(ds: data.Dataset) -> data.Dataset:
     Returns:
         data.Dataset: posioned dataset
     """
-    num_classes = len(np.unique(ds.target))
+    if ds.is_isic:
+        num_classes = 8
+    else:
+        num_classes = 10
+    
     target_array = np.array(ds.target)
     target_array = (target_array + 1) % num_classes
     ds.target = torch.from_numpy(target_array)
