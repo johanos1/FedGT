@@ -169,10 +169,10 @@ def process_client(client_idx, net_dataidx_map, data_obj):
 
     client_dl = data_obj.get_client_dl(dataidxs)
 
-    logging.info(
-        "client_idx = %d, local_sample_number = %d, batch_num = %d"
-        % (client_idx, local_data_num, len(client_dl))
-    )
+    # logging.info(
+    #     "client_idx = %d, local_sample_number = %d, batch_num = %d"
+    #     % (client_idx, local_data_num, len(client_dl))
+    # )
 
     return client_idx, local_data_num, client_dl
 
@@ -253,10 +253,8 @@ def load_partition_data(
         test_data_num = len(server_test_dl.dataset)
 
     # Ensure all data structures that you pass as arguments are picklable
-    import os
-
     with ProcessPoolExecutor(
-        max_workers=np.minimum(client_number, 10 )#os.cpu_count())
+        max_workers=np.minimum(client_number, 10)#os.cpu_count())
     ) as executor:
         results = list(
             executor.map(

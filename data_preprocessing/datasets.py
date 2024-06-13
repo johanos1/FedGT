@@ -142,7 +142,7 @@ class Data_Manager:
         
         if "emnist" in self.root:
             self.test_dataset = EMNIST(self.root, split='digits', train=False, transform=self.val_transform, download=True)
-        if "adult" in self.root:
+        elif "adult" in self.root:
             pass
         else:
             self.test_dataset = dataset.__class__(self.root, train=False, transform=self.val_transform, download=True)

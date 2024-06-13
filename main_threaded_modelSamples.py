@@ -64,10 +64,10 @@ if __name__ == "__main__":
     import pickle
 
 
-    with open('./results/modelSamples_ADULT_n-100_e-1_bs-64_alpha-inf_totalMC-5000_43.pkl', 'rb') as f:
-        d = pickle.load(f)
+    # with open('./results/modelSamples_ADULT_n-100_e-1_bs-64_alpha-inf_totalMC-5000_43.pkl', 'rb') as f:
+    #     d = pickle.load(f)
     
-    cfg_path = "./cfg_files/cfg_adult_modelsample.toml"
+    cfg_path = "./cfg_files/cfg_emnist_modelsample.toml"
    # cfg_path = "./cfg_files/cfg_mnist_modelsample.toml"
    # cfg_path = "./cfg_files/cfg_cifar.toml"
 
