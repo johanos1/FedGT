@@ -9,7 +9,6 @@ MODE_list = [2]
 attack_list = [2]
 total_MC_it = 5
 n_malicious_list = [3]
-PCA_simulation = false
 
 [Data]
 val_size = 100

@@ -41,6 +41,9 @@ BCJR_min_threshold = 0.1
 BCJR_max_threshold = 0.9
 BCJR_step_threshold = 0.1
 
+[QI]
+threshold = 0
+value = 'count'  # options: 'count', 'actual'
 
 
 
