@@ -32,7 +32,10 @@ def random_labels(ds: data.Dataset) -> data.Dataset:
         data.Dataset: posioned dataset
     """
     n_labels = ds.target.shape[0]
-    num_classes = len(np.unique(ds.target))
+    if ds.is_isic:
+            num_classes = 8
+    else:
+        num_classes = 10
     ds.target = torch.from_numpy(np.random.randint(num_classes, size=(n_labels,)))
     return ds
 
@@ -46,7 +49,11 @@ def permute_labels(ds: data.Dataset) -> data.Dataset:
     Returns:
         data.Dataset: posioned dataset
     """
-    num_classes = len(np.unique(ds.target))
+    if ds.is_isic:
+        num_classes = 8
+    else:
+        num_classes = 10
+    
     target_array = np.array(ds.target)
     target_array = (target_array + 1) % num_classes
     ds.target = torch.from_numpy(target_array)

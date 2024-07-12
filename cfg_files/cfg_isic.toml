@@ -1,49 +1,47 @@
 # Note that several of the parameters are given as lists to enable sweeping over parameters.
-
+# Check the Loss!!!!!
 [Sim]
-n_threads = 15
-n_clients = 15 # 15
-n_clients_total = 100
+n_threads = 3
+n_clients = 15
 # 0: no defence (keep the malicous nodes), 1: oracle (remove all malicious nodes), 2: group testing, 3: noiseless group testing, 4: GM_aggregation
-MODE_list = [2]  
+MODE_list = [2] 
 # 0: permutation attack, 1: random labels, 2: 1->7 label flip
-attack_list = [0,2]
-total_MC_it = 5 # 3,5 
-n_malicious_list = [20]
+n_malicious_list = [0]
+attack_list = [2]
+total_MC_it = 1
 PCA_simulation = false
 
 [PCA]
-no_comp = 4 
+no_comp = 4
 
 [Data]
-val_size = 100
-partition_method = "homo"  # homo, hetero
-data_dir = "data/cifar10"
-alpha_list = [1e4] 
-n_classes = 10
+val_size = 100 # 100
+partition_method = "homo"      # homo, hetero
+data_dir = "data/fed_isic2019"
+alpha_list = [1e4]
+n_classes = 8
 
 [ML]
-method = "fedavg"  # fedavg
+method = "fedavg"         # fedavg
 pretrained = 0
 client_sample = 1.0
-lr = 0.05 #0.05
+lr = 0.0005
 momentum = 0.9
-wd = 0.001
-communication_rounds = 30 #500#50
-epochs_list = [5] 
-batch_size_list = [128]
+wd = 0.0001
+communication_rounds = 40
+epochs_list = [1]
+batch_size_list = [64]
 
 
 [GT]
-n_tests = 8#4#8,10
-group_test_round = 1 #5
-test_threshold = 0.96 # GT threshold
-crossover_probability_list = [0.05]
-#prevalence = 0.1
+n_tests = 8
+group_test_round = 5
+test_threshold = 0.96               # GT threshold
+crossover_probability_list = [0.05] 
+manual_params = false
 prevalence_list = [0.1]
 P_FA = 0.05
 P_MD = 0.05
-manual_params = false
 # Decoding thresholds
 BCJR_min_threshold = 0.2
 BCJR_max_threshold = 0.21

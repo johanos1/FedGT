@@ -3,10 +3,14 @@ Federated Dataset Loading and Partitioning
 Code based on https://github.com/FedML-AI/FedML
 """
 
+import sys
+sys.path.append('/nas/lnt/ga53rum/packages/')
 import logging
 
 import numpy as np
 import torchvision.transforms as transforms
+import random
+import albumentations
 
 from data_preprocessing.datasets import Data_Manager
 
@@ -22,7 +26,7 @@ def record_net_data_stats(server_val_dl, server_test_dl, client_dict_dl):
     tmp = {val_unique[i]: val_counts[i] for i in range(len(val_unique))}
     logging.info(f"\nServer validation set: {str(tmp)}")
 
-    test_unique, test_counts = np.unique(np.array(server_test_dl.dataset.targets), return_counts=True)
+    test_unique, test_counts = np.unique(np.array(server_test_dl.dataset.target), return_counts=True)
     tmp = {test_unique[i]: test_counts[i] for i in range(len(test_unique))}
     logging.info(f"Server test set: {str(tmp)}\n")
 
@@ -81,6 +85,27 @@ def _data_transforms(datadir):
                 transforms.Normalize((0.1307,), (0.3081,)),  # normalize inputs
             ]
         )
+    
+    elif "isic" in datadir:
+        sz = 200
+        train_transform = albumentations.Compose(
+                [
+                    albumentations.RandomScale(0.07),
+                    albumentations.Rotate(50),
+                    albumentations.RandomBrightnessContrast(0.15, 0.1),
+                    albumentations.Flip(p=0.5),
+                    albumentations.Affine(shear=0.1),
+                    albumentations.RandomCrop(sz, sz),
+                    albumentations.CoarseDropout(random.randint(1, 8), 16, 16),
+                    albumentations.Normalize(always_apply=True),
+                ]
+            )
+        valid_transform = albumentations.Compose(
+                [
+                    albumentations.CenterCrop(sz, sz),
+                    albumentations.Normalize(always_apply=True),
+                ]
+            )
 
     return train_transform, valid_transform
 
@@ -134,9 +159,10 @@ def partition_data(data_obj, partition, n_nets, alpha):
 
     return class_num, net_dataidx_map
 
-
+    
 def get_data_object(datadir, val_size, batch_size):
     train_transform, val_test_transform = _data_transforms(datadir)
+    test_bs_marvin = 1
     dl_obj = Data_Manager(
         datadir,
         None,
@@ -144,7 +170,7 @@ def get_data_object(datadir, val_size, batch_size):
         val_test_transform,
         val_size,
         batch_size,
-        batch_size,
+        test_bs=test_bs_marvin, #batch_size,
     )
 
     return dl_obj
@@ -166,16 +192,19 @@ def load_partition_data(
     server_val_dl = data_obj.get_validation_dl()
     val_data_num = len(server_val_dl.dataset)
 
-    server_test_dl = data_obj.get_test_dl()
-    test_data_num = len(server_test_dl.dataset)
-
-    # Start looking at data for clients
-    class_num, net_dataidx_map = partition_data(data_obj, partition_method, client_number, partition_alpha)
-
     # get local dataset
     client_data_num = dict()
     client_dl_dict = dict()
-
+    
+    if data_obj.is_isic:
+        server_test_dl = data_obj.get_test_dl_isic()
+        net_dataidx_map = data_obj.splitISIC2019(client_number)
+        class_num = len(np.unique(server_test_dl.dataset.target))
+    else:
+        server_test_dl = data_obj.get_test_dl()
+        # Start looking at data for clients
+        class_num, net_dataidx_map = partition_data(data_obj, partition_method, client_number, partition_alpha)
+    test_data_num = len(server_test_dl.dataset)
     for client_idx in range(client_number):
         dataidxs = net_dataidx_map[client_idx]
         local_data_num = len(dataidxs)
