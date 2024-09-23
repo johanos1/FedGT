@@ -21,6 +21,7 @@ class QI_Test:
 
     def perform_QI_test(self, group_acc):
 
+        normalize = np.sum(self.parity_check_matrix, 0)
         scores = np.zeros(self.n_clients)
         for i in range(group_acc.shape[0] - 1):
             for j in range(group_acc.shape[1]):
@@ -31,14 +32,14 @@ class QI_Test:
                         for u in range(self.n_clients):
                             if self.parity_check_matrix[j][u]:
                                 if self.value == 'count':
-                                    scores[u] -= 1
+                                    scores[u] -= 1 / normalize[u]
                                 elif self.value == 'actual':
                                     scores[u] = scores[u] + (group_acc[i][j] - group_acc[i+1][k])
                         # Good
                         for u in range(self.n_clients):
                             if self.parity_check_matrix[k][u]:
                                 if self.value == 'count':
-                                    scores[u] += 1
+                                    scores[u] += 1 / normalize[u]
                                 elif self.value == 'actual':
                                     scores[u] = scores[u] - (group_acc[i][j] - group_acc[i+1][k])
                 # Ugly
@@ -46,7 +47,7 @@ class QI_Test:
                     for u in range(self.n_clients):
                         if self.parity_check_matrix[j][u]:
                             if self.value == 'count':
-                                scores[u] -= 1
+                                scores[u] -= 1 / normalize[u]
                             elif self.value == 'actual':
                                 scores[u] = scores[u] + group_acc[i][j]
                 if i == group_acc.shape[0] - 2:
