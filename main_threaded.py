@@ -28,6 +28,7 @@ from models.eff_net import efficient_net
 from data_preprocessing.data_poisoning import flip_label, random_labels, permute_labels
 from defence.group_test import Group_Test
 from defence.qi_test import QI_Test
+from defence.gtg_test import GTG_Test
 import torch.multiprocessing as mp
 from torch.multiprocessing import set_start_method
 
@@ -188,6 +189,8 @@ if __name__ == "__main__":
         sim_result["test_threshold"] = cfg.GT.test_threshold
         sim_result["QI_threshold"] = cfg.GT.QI_threshold
         sim_result["QI_value"] = cfg.GT.QI_value
+        sim_result["GTG_threshold"] = cfg.GT.GTG_threshold
+        sim_result["GTG_value"] = cfg.GT.GTG_value
         sim_result["group_test_round"] = cfg.GT.group_test_round
         sim_result["group_test_round_number"] = cfg.GT.group_test_round_number
         sim_result["group_test_round_distance"] = cfg.GT.group_test_round_distance
@@ -465,10 +468,16 @@ if __name__ == "__main__":
                     client_splits = np.array_split(clients, cfg.Sim.n_threads)
 
                     # variables for QI testing
-                    all_group_accuracies = np.zeros((cfg.GT.group_test_round_number, cfg.GT.n_tests))
-                    all_prec = all_group_accuracies.copy()
-                    all_rec = all_group_accuracies.copy()
-                    all_f1 = all_group_accuracies.copy()
+                    all_group_accuracies_QI = np.zeros((cfg.GT.group_test_round_number, cfg.GT.n_tests))
+                    all_prec_QI = all_group_accuracies_QI.copy()
+                    all_rec_QI = all_group_accuracies_QI.copy()
+                    all_f1_QI = all_group_accuracies_QI.copy()
+
+                    # variables for GTG testing
+                    all_group_accuracies_GTG = np.zeros((cfg.GT.group_test_round_number, cfg.GT.n_tests))
+                    all_prec_GTG = all_group_accuracies_GTG.copy()
+                    all_rec_GTG = all_group_accuracies_GTG.copy()
+                    all_f1_GTG = all_group_accuracies_GTG.copy()
 
                     for r in range(start_round, cfg.ML.communication_rounds):
                         round_start = time.time()
@@ -560,10 +569,18 @@ if __name__ == "__main__":
                                 # save accuracies for QI
                                 #print(np.where(test_rounds[:,1] == r)[0][0])
                                 #print(test_rounds[np.where(test_rounds[:,1] == r)[0][0]][0])
-                                all_group_accuracies[test_rounds[np.where(test_rounds[:,1] == r)[0][0]][0]] = group_accuracies
-                                all_prec[test_rounds[np.where(test_rounds[:,1] == r)[0][0]][0]] = np.mean(prec, axis=1)
-                                all_rec[test_rounds[np.where(test_rounds[:,1] == r)[0][0]][0]] = np.mean(rec, axis=1)
-                                all_f1[test_rounds[np.where(test_rounds[:,1] == r)[0][0]][0]] = np.mean(f1, axis=1)
+                                all_group_accuracies_QI[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = group_accuracies
+                                all_prec_QI[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = np.mean(prec, axis=1)
+                                all_rec_QI[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = np.mean(rec, axis=1)
+                                all_f1_QI[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = np.mean(f1, axis=1)
+
+                                # save accuracies for GTG
+                                # ToDo check
+                                all_group_accuracies_GTG[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = group_accuracies
+                                all_prec_GTG[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = np.mean(prec, axis=1)
+                                all_rec_GTG[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = np.mean(rec, axis=1)
+                                all_f1_GTG[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = np.mean(f1, axis=1)
+
 
                                 MD = MD + np.sum(gt.DEC[defective == 1] == 0)
                                 FA = FA + np.sum(gt.DEC[defective == 0] == 1)
@@ -595,7 +612,12 @@ if __name__ == "__main__":
                             # QI test
                             if r > np.max(test_rounds[:,1]):
                                 QItest = QI_Test(cfg.Sim.n_clients, cfg.GT.n_tests, cfg.Data.n_classes, cfg.GT.QI_threshold, cfg.GT.QI_value)
-                                QI_scores = QItest.perform_QI_test(all_group_accuracies)
+                                QI_scores = QItest.perform_QI_test(all_group_accuracies_QI)
+
+                            # GTG test
+                            if r > np.max(test_rounds[:,1]):
+                                GTGtest = GTG_Test(cfg.Sim.n_clients, cfg.GT.n_tests, cfg.Data.n_classes, cfg.GT.GTG_threshold, cfg.GT.GTG_value)
+                                GTG_scores = GTGtest.perform_GTG_test(all_group_accuracies_QI)
 
                             # If all malicious, just use all
                             if all_class_malicious:
