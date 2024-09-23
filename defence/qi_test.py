@@ -34,14 +34,14 @@ class QI_Test:
                                 if self.value == 'count':
                                     scores[u] -= 1 / normalize[u]
                                 elif self.value == 'actual':
-                                    scores[u] = scores[u] + (group_acc[i][j] - group_acc[i+1][k])
+                                    scores[u] += (group_acc[i][j] - group_acc[i+1][k])  / normalize[u]
                         # Good
                         for u in range(self.n_clients):
                             if self.parity_check_matrix[k][u]:
                                 if self.value == 'count':
                                     scores[u] += 1 / normalize[u]
                                 elif self.value == 'actual':
-                                    scores[u] = scores[u] - (group_acc[i][j] - group_acc[i+1][k])
+                                    scores[u] -= (group_acc[i][j] - group_acc[i+1][k]) / normalize[u]
                 # Ugly
                 if group_acc[i][j] < 0 - self.threshold:
                     for u in range(self.n_clients):
@@ -49,15 +49,15 @@ class QI_Test:
                             if self.value == 'count':
                                 scores[u] -= 1 / normalize[u]
                             elif self.value == 'actual':
-                                scores[u] = scores[u] + group_acc[i][j]
+                                scores[u] += group_acc[i][j] / normalize[u]
                 if i == group_acc.shape[0] - 2:
                     if group_acc[i + 1][j] < 0 - self.threshold:
                         for u in range(self.n_clients):
                             if self.parity_check_matrix[j][u]:
                                 if self.value == 'count':
-                                    scores[u] -= 1
+                                    scores[u] -= 1 / normalize[u]
                                 elif self.value == 'actual':
-                                    scores[u] = scores[u] + group_acc[i+1][j]
+                                    scores[u] += group_acc[i+1][j] / normalize[u]
         return scores
 
     def _get_test_matrix(self):
