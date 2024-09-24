@@ -18,7 +18,7 @@ class GTG_Test:
 
     def perform_GTG_test(self, group_acc):
         # ToDo
-        scores = 0
+        scores = np.zeros(self.n_clients)
         return scores
 
     def get_group_accuracy(self, client_models, server, group4test):

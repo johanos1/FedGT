@@ -293,7 +293,6 @@ if __name__ == "__main__":
 
             # to ensure it runs only once (gives error in 2nd round)
             if run == 1:
-                print("End of Experiment")
                 break
             run += 1
 
@@ -311,7 +310,6 @@ if __name__ == "__main__":
                 malicious_clients = malicious_clients[:n_malicious].tolist()
                 defective = np.zeros((1, cfg.Sim.n_clients), dtype=np.uint8)
                 defective[:, malicious_clients] = 1
-                print(f"Defective: {defective}")
                 attacks = list_of_lists = [[] for i in range(cfg.Sim.n_clients)]
                 for client in range(cfg.Sim.n_clients):
                     if client in malicious_clients:
@@ -453,7 +451,6 @@ if __name__ == "__main__":
                         thres_indx, monte_carlo_iterr, :, :
                     ] = gt.ChannelMatrix
                     syndrome = np.matmul(defective, gt.parity_check_matrix.transpose())
-                    print(f"Syndrome: {syndrome}")
                 # -----------------------------------------
                 #            Main Loop
                 # -----------------------------------------
@@ -560,15 +557,12 @@ if __name__ == "__main__":
                                         DEC, LLRO = gt.perform_group_test(group_accuracies)
                                     elif ATTACK == 2:
                                         DEC, LLRO = gt.perform_group_test(rec[:, src])
-                                    print(f"Surviving: {DEC}")
 
                                 # ToDo
                                 # 2 digit float point accuracies might be insufficient for QI
                                 # alternative solution is to use validation set instead of test set
 
                                 # save accuracies for QI
-                                #print(np.where(test_rounds[:,1] == r)[0][0])
-                                #print(test_rounds[np.where(test_rounds[:,1] == r)[0][0]][0])
                                 all_group_accuracies_QI[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = group_accuracies
                                 all_prec_QI[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = np.mean(prec, axis=1)
                                 all_rec_QI[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = np.mean(rec, axis=1)
@@ -647,6 +641,11 @@ if __name__ == "__main__":
                             )
 
                     accuracy[thres_indx, monte_carlo_iterr, :] = acc
+
+                print("Baseline",   defective)
+                print("GTScores",   LLRO)
+                print("QIScores ",  QI_scores)
+                print("GTGScores ", GTG_scores)
 
             if n_malicious > 0:
                 P_MD[thres_indx] = MD / (n_malicious * cfg.Sim.total_MC_it)

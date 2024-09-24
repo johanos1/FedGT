@@ -218,9 +218,6 @@ class Group_Test:
 
             pca_features_1d = pca_features[:,:,0]
 
-            print(f"first PCA component (group x label): \n {pca_features_1d}")
-            print(f"Explained variance (pca component x label): \n {explained_variance}")
-
         pca_features.reshape(pca_features.shape[0], pca_features.shape[1]*pca_features.shape[2])
         return pca_features
 
