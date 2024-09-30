@@ -475,6 +475,7 @@ if __name__ == "__main__":
                     all_f1_QI = all_group_accuracies_QI.copy()
 
                     # variables for SHAP testing
+
                     all_group_accuracies_SHAP = np.zeros((cfg.GT.group_test_round_number, 2**cfg.Sim.n_clients))
                     all_prec_SHAP = all_group_accuracies_SHAP.copy()
                     all_rec_SHAP = all_group_accuracies_SHAP.copy()
@@ -554,7 +555,6 @@ if __name__ == "__main__":
                                 if noiseless_gt is True:
                                     group_accuracies, prec, rec, f1 = gt.get_group_accuracies(client_outputs, server)
                                     group_accuracies_ALL, prec_ALL, rec_ALL, f1_ALL = shap.all_group_accuracies(client_outputs, server)
-                                    print("\nclient_outputs", client_outputs, "\nserver", server)
                                     DEC = gt.noiseless_group_test(syndrome)
                                 else:
                                     group_accuracies, prec, rec, f1 = gt.get_group_accuracies(client_outputs, server)
@@ -576,8 +576,8 @@ if __name__ == "__main__":
                                 all_rec_QI[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = np.mean(rec, axis=1)
                                 all_f1_QI[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = np.mean(f1, axis=1)
 
-                                # ToDo
                                 # save accuracies for SHAP
+                                np.append(group_accuracies_ALL, acc[0,r])
                                 all_group_accuracies_SHAP[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = group_accuracies_ALL
                                 all_prec_SHAP[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = np.mean(prec_ALL, axis=1)
                                 all_rec_SHAP[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = np.mean(rec_ALL, axis=1)
@@ -611,21 +611,26 @@ if __name__ == "__main__":
                             # -----  Aggregation  -----
 
                             # QI test
+                            QI_scores = np.zeros([cfg.GT.group_test_round_number,cfg.Sim.n_clients])
                             if r in test_rounds[:,1]:
+                                print("round", r, np.where(test_rounds[:,1] == r)[0][0])
                                 QItest = QI_Test(cfg.Sim.n_clients, cfg.GT.n_tests, cfg.Data.n_classes, cfg.GT.QI_threshold, cfg.GT.QI_value, gt._get_test_matrix())
-                                QI_scores = QItest.perform_QI_test(all_group_accuracies_QI)
+                                QI_scores[np.where(test_rounds[:,1] == r)[0][0]] = QItest.perform_QI_test(all_group_accuracies_QI, np.where(test_rounds[:,1] == r)[0][0])
 
                             # SHAP test
+                            SHAP_scores = np.zeros([cfg.GT.group_test_round_number,cfg.Sim.n_clients])
                             if r in test_rounds[:,1]:
                                 SHAPtest = SHAP_Test(cfg.Sim.n_clients, cfg.Data.n_classes)
-                                SHAP_scores = SHAPtest.perform_SHAP_test(all_group_accuracies_SHAP)
+                                SHAP_scores[np.where(test_rounds[:,1] == r)[0][0]] = SHAPtest.perform_SHAP_test(all_group_accuracies_SHAP, np.where(test_rounds[:,1] == r)[0][0])
 
                             if r in test_rounds[:,1]:
-                                print("Round",       r)
-                                print("Baseline",    defective)
-                                print("GTScores",    LLRO)
-                                print("QIScores ",   QI_scores)
-                                print("SHAPScores ", SHAP_scores)
+                                print("Round\t",       r)
+                                print("group_accuracies", ["{0:0.4f}".format(i) for i in group_accuracies])
+                                print("acc", ["{0:0.4f}".format(i) for i in acc[0]])
+                                print("Baseline\n",    defective[0])
+                                print("GT\n", ["{0:0.4f}".format(i) for i in LLRO[0]])
+                                print("QI\n", ["{0:0.4f}".format(i) for i in QI_scores[np.where(test_rounds[:,1] == r)[0][0]]])
+                                print("SV\n", ["{0:0.4f}".format(i) for i in SHAP_scores[np.where(test_rounds[:,1] == r)[0][0]]])
 
                             # If all malicious, just use all
                             if all_class_malicious:
@@ -704,14 +709,3 @@ if __name__ == "__main__":
             else:
                 suffix = f"m-{n_malicious},{cfg.Sim.n_clients}_t-{cfg.GT.n_tests}_e-{epochs}_bs-{batch_size}_alpha-{alpha}_totalMC-{cfg.Sim.total_MC_it}_MODE-{MODE}_prev-{prevalence_sim}_p-{crossover_probability}_att-{ATTACK}.txt"
             sim_title = prefix + suffix
-
-            #with open(sim_title, "w") as convert_file:
-            #    convert_file.write(json.dumps(checkpoint_dict))
-        # if not prev_and_cross_sim:
-        #     zgjimi = f"The simulation for dataset : {cfg_path[16:21]} for {n_malicious} mal_nodes out of {cfg.Sim.n_clients} clients, MODE {MODE}, ATTACK - {ATTACK}, with PCA - {cfg.Sim.PCA_simulation} is done!"
-        # else:
-        #     zgjimi = f"Mismatched: The simulation for {n_malicious} mal_nodes, prev {prevalence_sim} and cross_prop {crossover_probability} is done!"
-        # commando_uck = (
-        #     f'echo "{zgjimi}" | mail -s "Simulation done!" marvin.xhemrishi@tum.de'
-        # )
-        # coje = subprocess.call(commando_uck, shell=True)

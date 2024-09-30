@@ -1,4 +1,5 @@
 import numpy as np
+from itertools import combinations
 
 
 class SHAP_Test:
@@ -11,10 +12,28 @@ class SHAP_Test:
         self.n_tests = 2**n_clients
         self.n_classes = n_classes
 
-    def perform_SHAP_test(self, group_acc):
-        # ToDo
+    def perform_SHAP_test(self, group_acc, r):
+        groups4test = np.flip(np.array([[int(x) for x in format(i, f'0{self.n_clients}b')] for i in range(self.n_tests)]))
         scores = np.zeros(self.n_clients)
 
+        for i in range(self.n_clients):
+            tmp = 0
+            for subset in groups4test:
+                if subset[i] == 0:
+                    continue
+                # Create the subset without the participant 'i'
+                subset_without_i = np.copy(subset)
+                subset_without_i[i] = 0
+
+                subset_index = np.where(np.all(groups4test == subset, axis=1) == True)
+                subset_without_i_index = np.where(np.all(groups4test == subset_without_i, axis=1) == True)
+
+                marginal_contribution = group_acc[r][subset_index[0][0]] - group_acc[r][subset_without_i_index[0][0]]
+                subset_size = np.sum(subset) - 1
+                weight = (np.math.factorial(subset_size) * np.math.factorial(self.n_clients - subset_size - 1)) / np.math.factorial(self.n_clients)
+                tmp += weight * marginal_contribution
+
+            scores[i] = tmp
         return scores
 
     def all_group_accuracies(self, client_models, server):
@@ -22,7 +41,7 @@ class SHAP_Test:
         class_precision = np.zeros((self.n_tests, self.n_classes))
         class_recall = np.zeros((self.n_tests, self.n_classes))
         class_f1 = np.zeros((self.n_tests, self.n_classes))
-        groups4test = np.array([[int(x) for x in format(i, f'0{self.n_clients}b')] for i in range(1, self.n_tests)])
+        groups4test = np.flip(np.array([[int(x) for x in format(i, f'0{self.n_clients}b')] for i in range(self.n_tests)]))
 
         model_list = [[[] for j in range(self.n_classes)] for i in range(self.n_tests)]
         for i in range(self.n_tests-1):
