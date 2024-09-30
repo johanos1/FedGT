@@ -61,6 +61,18 @@ class Group_Test:
 
     def _get_test_matrix(self):
         # fmt: off
+        if self.n_clients == 7:
+            if self.n_tests == 4:
+                parity_check_matrix = np.array(
+                    [
+                        [1, 0, 0, 0, 1, 1, 0],
+                        [0, 1, 0, 0, 1, 0, 1],
+                        [0, 0, 1, 0, 0, 1, 1],
+                        [0, 0, 0, 1, 1, 1, 1],
+                    ],
+                    dtype = np.uint8
+                )
+
         if self.n_clients == 15:
             if self.n_tests == 8:
                 parity_check_matrix = np.array(
@@ -167,7 +179,6 @@ class Group_Test:
                 class_recall[i, :],
                 class_f1[i, :],
             ) = server.evaluate(test_data=False, eval_model=model)
-
 
             for name, param in model.items():
                 if server.model_name == "efficientnet":

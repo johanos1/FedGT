@@ -2,7 +2,7 @@
 
 [Sim]
 n_threads = 8
-n_clients = 15
+n_clients = 7 # 15, 31
 # 0: no defence (keep the malicous nodes), 1: oracle (remove all malicious nodes), 2: group testing 
 MODE_list = [2]
 # 0: permutation attack, 1: random labels, 2: 1->7 label flip
@@ -29,9 +29,9 @@ epochs_list = [1]
 batch_size_list = [64]
 
 [GT]
-n_tests = 8
+n_tests = 4
 group_test_round = 0
-group_test_round_number = 3
+group_test_round_number = 1
 group_test_round_distance = 1
 QI_threshold = 0
 QI_value = 'count'  # options: 'count', 'actual'
