@@ -28,7 +28,7 @@ from models.eff_net import efficient_net
 from data_preprocessing.data_poisoning import flip_label, random_labels, permute_labels
 from defence.group_test import Group_Test
 from defence.qi_test import QI_Test
-from defence.gtg_test import GTG_Test
+from defence.shap_test import SHAP_Test
 import torch.multiprocessing as mp
 from torch.multiprocessing import set_start_method
 
@@ -189,8 +189,8 @@ if __name__ == "__main__":
         sim_result["test_threshold"] = cfg.GT.test_threshold
         sim_result["QI_threshold"] = cfg.GT.QI_threshold
         sim_result["QI_value"] = cfg.GT.QI_value
-        sim_result["GTG_threshold"] = cfg.GT.GTG_threshold
-        sim_result["GTG_value"] = cfg.GT.GTG_value
+        sim_result["SHAP_threshold"] = cfg.GT.SHAP_threshold
+        sim_result["SHAP_value"] = cfg.GT.SHAP_value
         sim_result["group_test_round"] = cfg.GT.group_test_round
         sim_result["group_test_round_number"] = cfg.GT.group_test_round_number
         sim_result["group_test_round_distance"] = cfg.GT.group_test_round_distance
@@ -447,6 +447,10 @@ if __name__ == "__main__":
                         P_FA_test=P_FA_test,
                         P_MD_test=P_MD_test,
                     )
+                    shap = SHAP_Test(
+                        cfg.Sim.n_clients,
+                        cfg.Data.n_classes,
+                    )
                     sim_result["bsc_channel"][
                         thres_indx, monte_carlo_iterr, :, :
                     ] = gt.ChannelMatrix
@@ -470,11 +474,11 @@ if __name__ == "__main__":
                     all_rec_QI = all_group_accuracies_QI.copy()
                     all_f1_QI = all_group_accuracies_QI.copy()
 
-                    # variables for GTG testing
-                    all_group_accuracies_GTG = np.zeros((cfg.GT.group_test_round_number, cfg.GT.n_tests))
-                    all_prec_GTG = all_group_accuracies_GTG.copy()
-                    all_rec_GTG = all_group_accuracies_GTG.copy()
-                    all_f1_GTG = all_group_accuracies_GTG.copy()
+                    # variables for SHAP testing
+                    all_group_accuracies_SHAP = np.zeros((cfg.GT.group_test_round_number, 2**cfg.Sim.n_clients))
+                    all_prec_SHAP = all_group_accuracies_SHAP.copy()
+                    all_rec_SHAP = all_group_accuracies_SHAP.copy()
+                    all_f1_SHAP = all_group_accuracies_SHAP.copy()
 
                     for r in range(start_round, cfg.ML.communication_rounds):
                         round_start = time.time()
@@ -542,15 +546,19 @@ if __name__ == "__main__":
                             # -----------------------------------------
                             #           Group Testing
                             # -----------------------------------------
-                            test_rounds = np.array([np.array([idx, i]) for idx, i in enumerate(range(cfg.GT.group_test_round, cfg.GT.group_test_round + cfg.GT.group_test_round_number * cfg.GT.group_test_round_distance, cfg.GT.group_test_round_distance))])
+                            test_rounds = np.array([np.array([idx, i]) for idx, i in
+                                                    enumerate(range(cfg.GT.group_test_round, cfg.GT.group_test_round + cfg.GT.group_test_round_number * cfg.GT.group_test_round_distance, cfg.GT.group_test_round_distance))])
                             if r not in test_rounds[:, 1]:
                                 DEC = np.zeros((1, cfg.Sim.n_clients), dtype=np.uint8)
                             else:
                                 if noiseless_gt is True:
                                     group_accuracies, prec, rec, f1 = gt.get_group_accuracies(client_outputs, server)
+                                    group_accuracies_ALL, prec_ALL, rec_ALL, f1_ALL = shap.all_group_accuracies(client_outputs, server)
+                                    print("\nclient_outputs", client_outputs, "\nserver", server)
                                     DEC = gt.noiseless_group_test(syndrome)
                                 else:
                                     group_accuracies, prec, rec, f1 = gt.get_group_accuracies(client_outputs, server)
+                                    group_accuracies_ALL, prec_ALL, rec_ALL, f1_ALL = shap.all_group_accuracies(client_outputs, server)
 
                                     # DEC is binary, LLRO are likelihoods
                                     if ATTACK < 2:
@@ -559,7 +567,7 @@ if __name__ == "__main__":
                                         DEC, LLRO = gt.perform_group_test(rec[:, src])
 
                                 # ToDo
-                                # 2 digit float point accuracies might be insufficient for QI
+                                # 2 digit float point accuracies is insufficient
                                 # alternative solution is to use validation set instead of test set
 
                                 # save accuracies for QI
@@ -568,12 +576,12 @@ if __name__ == "__main__":
                                 all_rec_QI[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = np.mean(rec, axis=1)
                                 all_f1_QI[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = np.mean(f1, axis=1)
 
-                                # save accuracies for GTG
-                                # ToDo check
-                                all_group_accuracies_GTG[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = group_accuracies
-                                all_prec_GTG[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = np.mean(prec, axis=1)
-                                all_rec_GTG[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = np.mean(rec, axis=1)
-                                all_f1_GTG[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = np.mean(f1, axis=1)
+                                # ToDo
+                                # save accuracies for SHAP
+                                all_group_accuracies_SHAP[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = group_accuracies_ALL
+                                all_prec_SHAP[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = np.mean(prec_ALL, axis=1)
+                                all_rec_SHAP[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = np.mean(rec_ALL, axis=1)
+                                all_f1_SHAP[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = np.mean(f1_ALL, axis=1)
 
 
                                 MD = MD + np.sum(gt.DEC[defective == 1] == 0)
@@ -599,19 +607,25 @@ if __name__ == "__main__":
                                 sim_result["syndrome"][
                                     thres_indx, monte_carlo_iterr
                                 ] = syndrome[0]
-                            # -----------------------------------------
-                            #               Aggregation
-                            # -----------------------------------------
+
+                            # -----  Aggregation  -----
 
                             # QI test
-                            if r > np.max(test_rounds[:,1]):
-                                QItest = QI_Test(cfg.Sim.n_clients, cfg.GT.n_tests, cfg.Data.n_classes, cfg.GT.QI_threshold, cfg.GT.QI_value)
+                            if r in test_rounds[:,1]:
+                                QItest = QI_Test(cfg.Sim.n_clients, cfg.GT.n_tests, cfg.Data.n_classes, cfg.GT.QI_threshold, cfg.GT.QI_value, gt._get_test_matrix())
                                 QI_scores = QItest.perform_QI_test(all_group_accuracies_QI)
 
-                            # GTG test
-                            if r > np.max(test_rounds[:,1]):
-                                GTGtest = GTG_Test(cfg.Sim.n_clients, cfg.GT.n_tests, cfg.Data.n_classes, cfg.GT.GTG_threshold, cfg.GT.GTG_value)
-                                GTG_scores = GTGtest.perform_GTG_test(all_group_accuracies_QI)
+                            # SHAP test
+                            if r in test_rounds[:,1]:
+                                SHAPtest = SHAP_Test(cfg.Sim.n_clients, cfg.Data.n_classes)
+                                SHAP_scores = SHAPtest.perform_SHAP_test(all_group_accuracies_SHAP)
+
+                            if r in test_rounds[:,1]:
+                                print("Round",       r)
+                                print("Baseline",    defective)
+                                print("GTScores",    LLRO)
+                                print("QIScores ",   QI_scores)
+                                print("SHAPScores ", SHAP_scores)
 
                             # If all malicious, just use all
                             if all_class_malicious:
@@ -641,11 +655,6 @@ if __name__ == "__main__":
                             )
 
                     accuracy[thres_indx, monte_carlo_iterr, :] = acc
-
-                print("Baseline",   defective)
-                print("GTScores",   LLRO)
-                print("QIScores ",  QI_scores)
-                print("GTGScores ", GTG_scores)
 
             if n_malicious > 0:
                 P_MD[thres_indx] = MD / (n_malicious * cfg.Sim.total_MC_it)

@@ -1,35 +1,33 @@
 import numpy as np
 
 
-class GTG_Test:
+class SHAP_Test:
     def __init__(
             self,
             n_clients,
-            n_tests,
             n_classes,
-            threshold,
-            value,
     ):
         self.n_clients = n_clients
-        self.n_tests = n_tests
+        self.n_tests = 2**n_clients
         self.n_classes = n_classes
-        self.threshold = threshold
-        self.value = value
 
-    def perform_GTG_test(self, group_acc):
+    def perform_SHAP_test(self, group_acc):
         # ToDo
         scores = np.zeros(self.n_clients)
+
         return scores
 
-    def get_group_accuracy(self, client_models, server, group4test):
+    def all_group_accuracies(self, client_models, server):
         group_acc = np.zeros(self.n_tests)
         class_precision = np.zeros((self.n_tests, self.n_classes))
         class_recall = np.zeros((self.n_tests, self.n_classes))
         class_f1 = np.zeros((self.n_tests, self.n_classes))
+        groups4test = np.array([[int(x) for x in format(i, f'0{self.n_clients}b')] for i in range(1, self.n_tests)])
 
         model_list = [[[] for j in range(self.n_classes)] for i in range(self.n_tests)]
-        for i in range(self.n_tests):
-            client_idxs = group4test[0:i]
+        for i in range(self.n_tests-1):
+            # np.where gives a tuple where first entry is the list we want
+            client_idxs = np.where(groups4test[i, :] == 1)[0].tolist()
             group = []
             for idx in client_idxs:
                 group.append(client_models[idx])
@@ -59,17 +57,5 @@ class GTG_Test:
                         if weights.ndim == 1:
                             weights=np.expand_dims(weights, axis=1)
                         model_list[i][j].extend(weights[j,:]) # for each label, we use both bias and weights
-
-        model_list_2d = [np.array(sublist) for sublist in model_list] # turn lists into 2D arrays
-        model_list_3d = np.stack(model_list_2d, axis=0) # stack along the first axis to create 3D matrix with dim: tests x labels x weights
-        pca_features = self.get_pca(model_list_3d)
-
-        group_acc_2d = np.expand_dims(np.array(group_acc), axis=1)
-        group_recall_2d = np.array(class_recall)
-        group_precision_2d = np.array(class_precision)
-
-        gt_features = np.concatenate((pca_features, group_acc_2d, group_recall_2d, group_precision_2d), axis=1)
-
-        self.cluster_test(gt_features)
 
         return group_acc, class_precision, class_recall, class_f1
