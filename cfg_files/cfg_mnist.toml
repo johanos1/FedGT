@@ -30,11 +30,10 @@ batch_size_list = [64]
 
 [GT]
 n_tests = 4
-group_test_round = 1
-group_test_round_number = 2
-group_test_round_distance = 2
+group_test_round = 2
+group_test_round_number = 3
+group_test_round_distance = 1
 QI_threshold = 0
-QI_value = 'count'  # options: 'count', 'actual'
 test_threshold = 0.96 # GT threshold
 crossover_probability_list = [0.05]
 prevalence_list = [0.133]

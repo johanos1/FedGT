@@ -188,9 +188,6 @@ if __name__ == "__main__":
         sim_result["val_size"] = cfg.Data.val_size
         sim_result["test_threshold"] = cfg.GT.test_threshold
         sim_result["QI_threshold"] = cfg.GT.QI_threshold
-        sim_result["QI_value"] = cfg.GT.QI_value
-        sim_result["SHAP_threshold"] = cfg.GT.SHAP_threshold
-        sim_result["SHAP_value"] = cfg.GT.SHAP_value
         sim_result["group_test_round"] = cfg.GT.group_test_round
         sim_result["group_test_round_number"] = cfg.GT.group_test_round_number
         sim_result["group_test_round_distance"] = cfg.GT.group_test_round_distance
@@ -470,16 +467,22 @@ if __name__ == "__main__":
 
                     # variables for QI testing
                     all_group_accuracies_QI = np.zeros((cfg.GT.group_test_round_number, cfg.GT.n_tests))
+                    all_group_improvements_QI = all_group_accuracies_QI.copy()
                     all_prec_QI = all_group_accuracies_QI.copy()
                     all_rec_QI = all_group_accuracies_QI.copy()
                     all_f1_QI = all_group_accuracies_QI.copy()
+                    QI_inround_scores = np.zeros([cfg.GT.group_test_round_number, cfg.Sim.n_clients])
+                    QI_inround_accumulated = np.zeros([cfg.GT.group_test_round_number, cfg.Sim.n_clients])
+                    QI_acrossround_scores = np.zeros([cfg.GT.group_test_round_number - 1, cfg.Sim.n_clients])
+                    QI_acrossround_accumulated = np.zeros([cfg.GT.group_test_round_number - 1, cfg.Sim.n_clients])
+                    QI_both_accumulated = np.zeros([cfg.GT.group_test_round_number, cfg.Sim.n_clients])
 
                     # variables for SHAP testing
-
                     all_group_accuracies_SHAP = np.zeros((cfg.GT.group_test_round_number, 2**cfg.Sim.n_clients))
                     all_prec_SHAP = all_group_accuracies_SHAP.copy()
                     all_rec_SHAP = all_group_accuracies_SHAP.copy()
                     all_f1_SHAP = all_group_accuracies_SHAP.copy()
+                    SHAP_scores = np.zeros([cfg.GT.group_test_round_number,cfg.Sim.n_clients])
 
                     for r in range(start_round, cfg.ML.communication_rounds):
                         round_start = time.time()
@@ -572,6 +575,10 @@ if __name__ == "__main__":
 
                                 # save accuracies for QI
                                 all_group_accuracies_QI[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = group_accuracies
+                                if r == 1:
+                                    all_group_improvements_QI[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = group_accuracies - 1 / cfg.Data.n_classes
+                                else:
+                                    all_group_improvements_QI[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = group_accuracies - acc[0][r - 1]
                                 all_prec_QI[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = np.mean(prec, axis=1)
                                 all_rec_QI[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = np.mean(rec, axis=1)
                                 all_f1_QI[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = np.mean(f1, axis=1)
@@ -582,7 +589,6 @@ if __name__ == "__main__":
                                 all_prec_SHAP[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = np.mean(prec_ALL, axis=1)
                                 all_rec_SHAP[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = np.mean(rec_ALL, axis=1)
                                 all_f1_SHAP[test_rounds[np.where(test_rounds[:, 1] == r)[0][0]][0]] = np.mean(f1_ALL, axis=1)
-
 
                                 MD = MD + np.sum(gt.DEC[defective == 1] == 0)
                                 FA = FA + np.sum(gt.DEC[defective == 0] == 1)
@@ -611,14 +617,26 @@ if __name__ == "__main__":
                             # -----  Aggregation  -----
 
                             # QI test
-                            QI_scores = np.zeros([cfg.GT.group_test_round_number,cfg.Sim.n_clients])
                             if r in test_rounds[:,1]:
-                                print("round", r, np.where(test_rounds[:,1] == r)[0][0])
-                                QItest = QI_Test(cfg.Sim.n_clients, cfg.GT.n_tests, cfg.Data.n_classes, cfg.GT.QI_threshold, cfg.GT.QI_value, gt._get_test_matrix())
-                                QI_scores[np.where(test_rounds[:,1] == r)[0][0]] = QItest.perform_QI_test(all_group_accuracies_QI, np.where(test_rounds[:,1] == r)[0][0])
+                                QItest = QI_Test(cfg.Sim.n_clients, cfg.GT.n_tests, cfg.Data.n_classes, cfg.GT.QI_threshold, gt._get_test_matrix())
+                                # only within round
+                                QI_inround_scores[np.where(test_rounds[:, 1] == r)[0][0]] = QItest.perform_QI_test_inround(all_group_accuracies_QI, np.where(test_rounds[:, 1] == r)[0][0])
+                                # accumulate within-round QI scores (without weighting)
+                                aux = np.where(test_rounds[:,1] == r)[0][0] + 1
+                                QI_inround_accumulated[np.where(test_rounds[:, 1] == r)[0][0]] = np.mean(QI_inround_scores[:aux, :], axis = 0)
+                                # compare to the previous test round
+                                if r > np.min(test_rounds[:,1]):
+                                    # only across round
+                                    QI_acrossround_scores[np.where(test_rounds[:, 1] == r)[0][0] - 1] = QItest.perform_QI_test_acrossround(all_group_improvements_QI, np.where(test_rounds[:, 1] == r)[0][0])
+                                    # accumulate across-round QI scores (without weighting)
+                                    aux = np.where(test_rounds[:,1] == r)[0][0]
+                                    QI_acrossround_accumulated[np.where(test_rounds[:, 1] == r)[0][0] - 1] = np.mean(QI_acrossround_scores[:aux, :], axis = 0)
+                                    # both inround and across-round accumulated (without weighting)
+                                    QI_both_accumulated[aux] = QI_inround_accumulated[aux] + QI_acrossround_accumulated[aux - 1]
+                                else:
+                                    QI_both_accumulated[0] = QI_inround_accumulated[0]
 
                             # SHAP test
-                            SHAP_scores = np.zeros([cfg.GT.group_test_round_number,cfg.Sim.n_clients])
                             if r in test_rounds[:,1]:
                                 SHAPtest = SHAP_Test(cfg.Sim.n_clients, cfg.Data.n_classes)
                                 SHAP_scores[np.where(test_rounds[:,1] == r)[0][0]] = SHAPtest.perform_SHAP_test(all_group_accuracies_SHAP, np.where(test_rounds[:,1] == r)[0][0])
@@ -628,9 +646,13 @@ if __name__ == "__main__":
                                 print("group_accuracies", ["{0:0.4f}".format(i) for i in group_accuracies])
                                 print("acc", ["{0:0.4f}".format(i) for i in acc[0]])
                                 print("Baseline\n",    defective[0])
-                                print("GT\n", ["{0:0.4f}".format(i) for i in LLRO[0]])
-                                print("QI\n", ["{0:0.4f}".format(i) for i in QI_scores[np.where(test_rounds[:,1] == r)[0][0]]])
                                 print("SV\n", ["{0:0.4f}".format(i) for i in SHAP_scores[np.where(test_rounds[:,1] == r)[0][0]]])
+                                print("GT\n", ["{0:0.4f}".format(i) for i in LLRO[0]])
+                                print("QI(in)\n", ["{0:0.4f}".format(i) for i in QI_inround_scores[np.where(test_rounds[:, 1] == r)[0][0]]])
+                                print("QI(in)_accumulated\n", ["{0:0.4f}".format(i) for i in QI_inround_accumulated[np.where(test_rounds[:, 1] == r)[0][0]]])
+                                print("QI(across)\n", ["{0:0.4f}".format(i) for i in QI_acrossround_scores[np.where(test_rounds[:, 1] == r)[0][0] - 1]])
+                                print("QI(across)_accumulated\n", ["{0:0.4f}".format(i) for i in QI_acrossround_accumulated[np.where(test_rounds[:, 1] == r)[0][0] - 1]])
+                                print("QI(both)_accumulated\n", ["{0:0.4f}".format(i) for i in QI_both_accumulated[np.where(test_rounds[:, 1] == r)[0][0]]])
 
                             # If all malicious, just use all
                             if all_class_malicious:
@@ -661,11 +683,15 @@ if __name__ == "__main__":
 
                     accuracy[thres_indx, monte_carlo_iterr, :] = acc
 
-            if n_malicious > 0:
-                P_MD[thres_indx] = MD / (n_malicious * cfg.Sim.total_MC_it)
-            P_FA[thres_indx] = FA / (
-                (cfg.Sim.n_clients - n_malicious) * cfg.Sim.total_MC_it
-            )
+        print("QI(in)\n", QI_inround_scores)
+        print("QI(in)_accumulated\n", QI_inround_accumulated)
+        print("QI(across)\n", QI_acrossround_scores)
+        print("QI(across)_accumulated\n", QI_acrossround_accumulated)
+        print("QI(both)_accumulated\n", QI_both_accumulated)
+
+        if n_malicious > 0:
+            P_MD[thres_indx] = MD / (n_malicious * cfg.Sim.total_MC_it)
+            P_FA[thres_indx] = FA / ((cfg.Sim.n_clients - n_malicious) * cfg.Sim.total_MC_it)
 
             # make all nparrays JSON serializable
             checkpoint_dict = copy.deepcopy(sim_result)
