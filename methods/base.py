@@ -6,8 +6,24 @@ from typing import OrderedDict, List
 import torch
 import logging
 from sklearn.metrics import confusion_matrix
+from collections import OrderedDict
 import numpy as np
 import copy
+
+def generate_histogram(data, num_classes, client_idx):
+    histogram = [0] * num_classes  # Initialize histogram with zeros for each class
+
+    # Count occurrences of values in data
+    for value in data:
+        if 0 <= value < num_classes:  # Consider values within the range of classes
+            histogram[value] += 1
+
+    # Display the histogram
+    print(f"Client {client_idx}:", end=' ')
+    for i, freq in enumerate(histogram):
+        if freq > 0:
+            print(f'{i}: {freq}', end=' ')
+    print(" ")
 
 
 class Base_Client:
@@ -22,10 +38,17 @@ class Base_Client:
         self.epochs = args.epochs
         self.batch_size = args.batch_size
         self.round = 0
-    
+
     def load_model(self, server_model):
-        self.model.load_state_dict(copy.deepcopy(server_model))
+        """Load global model
+
+        Args:
+            server_state_dict (OrderedDict): global model
+        """
+        # If you want to customize how to state dict is loaded you can do so here
+        self.model.load_state_dict(server_model)
         
+
     def run(self):
         num_samples = len(self.train_dataloader)
         weights = self.train_model()
@@ -165,11 +188,17 @@ class Base_Server:
         self.device = "cuda:{}".format(torch.cuda.device_count() - 1) if torch.cuda.is_available() else "cpu"
         self.model_type = server_dict["model_type"]
         self.num_classes = server_dict["num_classes"]
-        self.model_name = server_dict["model_name"]
         self.acc = 0.0
         self.round = 0
         self.n_threads = args.n_threads
         self.aggregation_method = args.aggregation
+        if args.aggregation == "FedADAM" or args.aggregation == "FedAdagrad" or args.aggregation == "FedYogi":
+            self.momentum1 = None
+            self.momentum2 = None
+            self.tau = 1e-3 #0.05 #1e-3 
+            self.lr = 0.01 #2*self.tau - 2e-04 #0.0031622776601683 # 2*self.tau # 2*self.tau +
+            self.beta_1 = 0.9 #0.9# 0.9 #0#0.001 #0.0 # 0.9
+            self.beta_2 = 0.99 #0.99 #0.999 #0.999 #1.0 #0.99
 
     def run(self, received_info: List[OrderedDict]) -> List[OrderedDict]:
         """Aggregater client models and evaluate accuracy
@@ -183,8 +212,16 @@ class Base_Server:
         # aggregate client models
         if self.aggregation_method == "GM":
             server_outputs = self.GM_aggregation(received_info)
-        else:
+        elif self.aggregation_method == "FedADAM":
+            server_outputs = self.FedAdam_online(received_info)#self.FedAdam(received_info)
+        elif self.aggregation_method == "FedAdagrad":
+            server_outputs = self.FedAdagrad(received_info)
+        elif self.aggregation_method == "FedYogi":
+            server_outputs = self.FedYogi(received_info)
+        elif self.aggregation_method == "Avg":
             server_outputs = self.aggregate_models(received_info)
+        else:
+            assert False, "Vari karin me agregimin"
 
         # check accuracy on test set
         acc, cf_matrix, class_prec, class_recall, class_f1 = self.evaluate(test_data=True)
@@ -202,6 +239,202 @@ class Base_Server:
 
     def start(self):
         return self.model.cpu().state_dict() 
+
+    def FedAdam_online(self, client_info, update_server=True):
+        """Server aggregation of client models with Adam optimizer (FedOPT idea)
+
+        Args:
+            client_info (_type_): includes the local models, index, accuracy, num samples
+
+        Returns:
+            _type_: list of new global model, one copy for each thread
+        """
+        # sort clients with respect to index
+        client_info.sort(key=lambda tup: tup["client_index"])
+        # pick only the weights from the clients
+        client_sd = [c["weights"] for c in client_info]
+        # compute fraction of data samples each client has
+        cw = [c["num_samples"] / sum([x["num_samples"] for x in client_info]) for c in client_info]
+        # load the previous server model
+        ssd = self.model.state_dict()
+        Delta = OrderedDict()
+        # go through each layer in model and replace with weighted average of client models
+        for key in ssd.keys():
+            Delta[key] = sum([(sd[key].to("cpu") - ssd[key].to("cpu")) * cw[i] for i, sd in enumerate(client_sd)])
+        mt = OrderedDict()
+        vt = OrderedDict()
+        if self.momentum1 == None:
+            assert self.momentum2 == None, "Second momentum not None!!!"
+            self.momentum1 = OrderedDict()
+            self.momentum2 = OrderedDict()
+            for key in Delta.keys():
+                self.momentum1[key] = 0.0
+                self.momentum2[key] = self.tau **2
+        for key in Delta.keys():
+            g = Delta[key]
+            mt[key] = self.beta_1 * self.momentum1[key] + (1-self.beta_1) * g
+            vt[key] = self.beta_2 * self.momentum2[key] + (1-self.beta_2)* torch.mul(g, g)
+            m_hat = mt[key]# / (1 - self.beta_1)
+            v_hat = vt[key]# / (1 - self.beta_2)
+            ssd[key] = ssd[key] + self.lr * torch.div(m_hat.detach().to(ssd[key].device), torch.sqrt(v_hat.detach().to(ssd[key].device)) + self.tau) # sanity check for vt
+
+        if update_server is True:
+            # update server model with the client average
+            self.model.load_state_dict(ssd)
+            self.momentum1 = mt #
+            self.momentum2 = vt #
+            # return a copy of the aggregated model
+            return self.model.cpu().state_dict() 
+        else:
+            return ssd
+    
+    def FedYogi(self, client_info, update_server=True):
+        """Server aggregation of client models with Adam optimizer (FedOPT idea)
+
+        Args:
+            client_info (_type_): includes the local models, index, accuracy, num samples
+
+        Returns:
+            _type_: list of new global model, one copy for each thread
+        """
+        # sort clients with respect to index
+        client_info.sort(key=lambda tup: tup["client_index"])
+        # pick only the weights from the clients
+        client_sd = [c["weights"] for c in client_info]
+        # compute fraction of data samples each client has
+        cw = [c["num_samples"] / sum([x["num_samples"] for x in client_info]) for c in client_info]
+        # load the previous server model
+        ssd = self.model.state_dict()
+        Delta = OrderedDict()
+        # go through each layer in model and replace with weighted average of client models
+        for key in ssd.keys():
+            Delta[key] = sum([(sd[key].to("cpu") - ssd[key].to("cpu")) * cw[i] for i, sd in enumerate(client_sd)])
+        mt = OrderedDict()
+        vt = OrderedDict()
+        if self.momentum1 == None:
+            assert self.momentum2 == None, "Second momentum not None!!!"
+            self.momentum1 = OrderedDict()
+            self.momentum2 = OrderedDict()
+            for key in Delta.keys():
+                self.momentum1[key] = 0.0
+                self.momentum2[key] = self.tau **2
+        for key in Delta.keys():
+            g = Delta[key]
+            mt[key] = self.beta_1 * self.momentum1[key] + (1-self.beta_1) * g
+            g_squared = torch.mul(g, g)
+            vt[key] = self.momentum2[key] - (1-self.beta_2)* g_squared * torch.sign(self.momentum2[key] - g_squared)
+            m_hat = mt[key]# / (1 - self.beta_1)
+            v_hat = vt[key]# / (1 - self.beta_2)
+            ssd[key] = ssd[key] + self.lr * torch.div(m_hat.detach().to(ssd[key].device), torch.sqrt(v_hat.detach().to(ssd[key].device)) + self.tau) # sanity check for vt
+
+        if update_server is True:
+            # update server model with the client average
+            self.model.load_state_dict(ssd)
+            self.momentum1 = mt #
+            self.momentum2 = vt #
+            # return a copy of the aggregated model
+            return self.model.cpu().state_dict() 
+        else:
+            return ssd
+
+    def FedAdagrad(self, client_info, update_server=True):
+        """Server aggregation of client models with Adam optimizer (FedOPT idea)
+
+        Args:
+            client_info (_type_): includes the local models, index, accuracy, num samples
+
+        Returns:
+            _type_: list of new global model, one copy for each thread
+        """
+        # sort clients with respect to index
+        client_info.sort(key=lambda tup: tup["client_index"])
+        # pick only the weights from the clients
+        client_sd = [c["weights"] for c in client_info]
+        # compute fraction of data samples each client has
+        cw = [c["num_samples"] / sum([x["num_samples"] for x in client_info]) for c in client_info]
+        # load the previous server model
+        ssd = self.model.state_dict()
+        Delta = OrderedDict()
+        # go through each layer in model and replace with weighted average of client models
+        for key in ssd.keys():
+            Delta[key] = sum([(sd[key].to("cpu") - ssd[key].to("cpu")) * cw[i] for i, sd in enumerate(client_sd)])
+        mt = OrderedDict()
+        vt = OrderedDict()
+        if self.momentum1 == None:
+            assert self.momentum2 == None, "Second momentum not None!!!"
+            self.momentum1 = OrderedDict()
+            self.momentum2 = OrderedDict()
+            for key in Delta.keys():
+                self.momentum1[key] = 0.0
+                self.momentum2[key] = self.tau **2
+        for key in Delta.keys():
+            g = Delta[key]
+            mt[key] = self.beta_1 * self.momentum1[key] + (1-self.beta_1) * g
+            vt[key] = self.momentum2[key] + torch.mul(g, g)
+            m_hat = mt[key]# / (1 - self.beta_1)
+            v_hat = vt[key]# / (1 - self.beta_2)
+            ssd[key] = ssd[key] + self.lr * torch.div(m_hat.detach().to(ssd[key].device), torch.sqrt(v_hat.detach().to(ssd[key].device)) + self.tau) # sanity check for vt
+
+        if update_server is True:
+            # update server model with the client average
+            self.model.load_state_dict(ssd)
+            self.momentum1 = mt #
+            self.momentum2 = vt #
+            # return a copy of the aggregated model
+            return self.model.cpu().state_dict() 
+        else:
+            return ssd
+
+    def FedAdam(self, client_info, update_server=True):
+        """Server aggregation of client models with Adam optimizer (FedOPT idea)
+
+        Args:
+            client_info (_type_): includes the local models, index, accuracy, num samples
+
+        Returns:
+            _type_: list of new global model, one copy for each thread
+        """
+        # sort clients with respect to index
+        client_info.sort(key=lambda tup: tup["client_index"])
+        # pick only the weights from the clients
+        client_sd = [c["weights"] for c in client_info]
+        # compute fraction of data samples each client has
+        cw = [c["num_samples"] / sum([x["num_samples"] for x in client_info]) for c in client_info]
+        # load the previous server model
+        ssd = self.model.state_dict()
+        Delta = {k: v.clone() for k, v in ssd.items()}
+        # go through each layer in model and replace with weighted average of client models
+        for key in Delta:
+            Delta[key] = sum([(sd[key].to("cpu") - ssd[key].to("cpu")) * cw[i] for i, sd in enumerate(client_sd)])
+        mt = {k: v.clone() for k, v in ssd.items()}
+        vt = {k: v.clone() for k, v in ssd.items()}
+        if self.momentum1 is None:
+            for key in Delta:
+                mt[key] = (1-self.beta_1) * Delta[key]
+        else:
+            for key in Delta:
+                mt[key] =self.beta_1 * self.momentum1[key] + (1-self.beta_1) * Delta[key] 
+        if self.momentum2 is None:
+            for key in Delta:
+                vt[key] = self.beta_2 * self.tau ** 2 + (1-self.beta_2)*(Delta[key] **2)
+        else:
+            for key in Delta:
+                vt[key] = self.beta_2 * self.momentum2[key] + (1-self.beta_2)*torch.mul(Delta[key], Delta[key])#(Delta[key] **2)
+
+        for key in ssd: 
+            ssd[key] = ssd[key].to("cpu") + self.lr * torch.div(mt[key], torch.sqrt(vt[key]) + self.tau) # sanity check for vt
+            #ssd[key] = ssd[key].to("cpu") + self.lr * mt[key] # sanity check for mt
+
+        if update_server is True:
+            # update server model with the client average
+            self.model.load_state_dict(ssd)
+            self.momentum1 = mt
+            self.momentum2 = vt
+            # return a copy of the aggregated model
+            return self.model.cpu().state_dict() 
+        else:
+            return ssd
+
 
     def aggregate_models(self, client_info, update_server=True):
         """Server aggregation of client models
@@ -230,7 +463,7 @@ class Base_Server:
             # return a copy of the aggregated model
             return self.model.cpu().state_dict() 
         else:
-            return ssd 
+            return ssd
 
     def GM_aggregation(self, client_info):
         """
@@ -256,7 +489,7 @@ class Base_Server:
         # Update the server model!
         self.model.load_state_dict(ssd)
         # return a copy of the aggregated model
-        return [self.model.cpu().state_dict() for x in range(self.n_threads)]
+        return self.model.cpu().state_dict() 
         
 
     def evaluate(self, test_data=False, eval_model=None):
@@ -278,15 +511,12 @@ class Base_Server:
             data_loader = self.test_data
         else:
             data_loader = self.val_data
+            loss_per_label = [[] for _ in range(self.num_classes)] 
 
         y_true = []
         y_pred = []
         with torch.no_grad():
             for batch_idx, (x, target) in enumerate(data_loader):
-                if batch_idx >= 50:
-                    break
-        
-        
                 x = x.to(self.device)
                 
                 target = target.to(self.device)
@@ -294,8 +524,10 @@ class Base_Server:
                     pred = self.model(x)
                 else:
                     pred = model(x)
-
-                # loss = self.criterion(pred, target)
+                    ### CrossEntropy of pred and target_y (save the average loss for each label in a list)
+                if test_data == False:
+                    loss = self.criterion(pred, target)
+                    loss_per_label[target.item()].append(loss.item())
                 _, predicted = torch.max(pred, 1)
                 correct = predicted.eq(target).sum()
 
@@ -349,5 +581,8 @@ class Base_Server:
         # number of correct predictions from total samples
         acc2 = (true_pos.sum()) / tot
     
-
-        return acc, cf_matrix, class_prec, class_recall, class_f1
+        if test_data == False:
+            loss_per_label = np.array([sum(inner_list) / len(inner_list) if len(inner_list) > 0 else 0 for inner_list in loss_per_label])
+            return acc, cf_matrix, class_prec, class_recall, class_f1, loss_per_label
+        else:
+            return acc, cf_matrix, class_prec, class_recall, class_f1
