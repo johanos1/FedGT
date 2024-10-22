@@ -306,7 +306,7 @@ class Group_Test:
                 group.append(client_models[idx])
 
             # aggregation returns a list so pick the (only) item
-            model = server.aggregate_models(group, update_server=False)[0]
+            model = server.aggregate_models(group, update_server=False)
             
             # note, aside from accuracy, we have access to precision, recall, and f1 score for each class
             (
@@ -355,12 +355,12 @@ class Group_Test:
                 group.append(client_models[idx])
 
             # aggregation returns a list so pick the (only) item
-            group_model = server.aggregate_models(group, update_server=False)[0]
+            group_model = server.aggregate_models(group, update_server=False)
             
             #sim_cos.append(sim_obj(server_model, torch.flatten(group_model["fc.weight"])-server_model).detach().numpy())
             tmp_matrix.append(sim_obj(server_model, group_model[str_name]-server_model).detach().numpy())
             sim_flattened_list.append(torch.nn.functional.cosine_similarity(server_model_flattened, torch.flatten(group_model[str_name]-server_model), dim=0).detach().numpy())
-                        
+
             # Convert list of tensors to list of numpy arrays
             #agg_models.append(torch.flatten(group_model["fc.weight"]).detach().numpy())
             agg_models.append(torch.flatten(group_model[str_name]).detach().numpy())

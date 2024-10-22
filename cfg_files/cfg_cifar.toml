@@ -6,7 +6,7 @@ n_clients = 15 # 15
 # 0: no defence (keep the malicous nodes), 1: oracle (remove all malicious nodes), 2: group testing, 3: noiseless group testing, 4: GM_aggregation
 MODE_list = [2]  
 # 0: permutation attack, 1: random labels, 2: 1->7 label flip, 3:active attack
-attack_list = [2]
+attack_list = [3]
 total_MC_it = 5
 n_malicious_list = [3]
 
@@ -31,7 +31,7 @@ batch_size_list = [128]
 
 [GT]
 n_tests = 8#4#8,10
-group_test_round = 1
+group_test_round = 5
 test_threshold = 0.96 # GT threshold
 crossover_probability_list = [0.05]
 #prevalence = 0.1

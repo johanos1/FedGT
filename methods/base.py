@@ -51,9 +51,9 @@ class Base_Client:
         
 
     def run(self):
-        num_samples = len(self.train_dataloader)
-        weights = self.train_model()
-        client_results = {"weights": copy.deepcopy(weights), "num_samples": num_samples,"client_index": self.client_index}
+        num_samples = len(self.train_dataloader.dataset)
+        weights, src_cnt = self.train_model()
+        client_results = {"weights": copy.deepcopy(weights), "active_poison":self.active_poisoning, "src_cnt":src_cnt, "num_samples": num_samples,"client_index": self.client_index}
         self.round += 1
         return client_results
 
@@ -62,10 +62,19 @@ class Base_Client:
         self.model.to(self.device)
         self.model.train()
         epoch_loss = []
+        
+        
+        if self.active_poisoning:
+            train_dataloader = self.poisoned_train_dataloader
+        else:
+            train_dataloader = self.train_dataloader
+            
         for epoch in range(self.epochs):
             batch_loss = []
-            for batch_idx, (images, labels) in enumerate(self.train_dataloader):
+            src_cnt = 0
+            for batch_idx, (images, labels) in enumerate(train_dataloader):
                 # logging.info(images.shape)
+                src_cnt += sum(labels==7).item()
                 images, labels = images.to(self.device), labels.to(self.device)
                 self.optimizer.zero_grad()
                 log_probs = self.model(images)
@@ -83,7 +92,7 @@ class Base_Client:
                     )
                 )
         weights = self.model.cpu().state_dict()
-        return weights
+        return weights, src_cnt
 
     def test(self) -> float:
         """Evaluate the local model, note it is using the training set
@@ -100,14 +109,9 @@ class Base_Client:
         test_loss = 0.0
         test_sample_number = 0.0
         
-        if self.active_poisoning:
-            train_dataloader = self.poisoned_train_dataloader
-        else:
-            train_dataloader = self.train_dataloader
-        
         # No training takes place here
         with torch.no_grad():
-            for batch_idx, (x, target) in enumerate(train_dataloader):
+            for batch_idx, (x, target) in enumerate(self.train_dataloader):
                 x = x.to(self.device)
                 target = target.to(self.device)
                 pred = self.model(x)
@@ -139,7 +143,7 @@ class Base_Client:
         logits = torch.cat(logits, dim=0).to("cpu")
         
         # Get target indices
-        target_indices = self.train_dataloader.dataset.target == poison_target
+        target_indices = torch.from_numpy(self.train_dataloader.dataset.target == poison_target)
         # drop the last nonfull batch
         target_indices = target_indices[:logits.shape[0]]
         # pick the rows corresponding to the target label

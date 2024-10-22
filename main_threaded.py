@@ -9,6 +9,7 @@ import numpy as np
 import random
 import copy
 import logging
+import os
 logging.getLogger('timm').setLevel(logging.WARNING) #ERROR
 import time
 import json
@@ -99,7 +100,7 @@ def load_model(mc_iteration, index_of_nm):
 
 if __name__ == "__main__":
 
-    cfg_path = "./cfg_files/cfg_mnist.toml"
+    cfg_path = "./cfg_files/cfg_cifar.toml"
     with open(cfg_path, "r") as file:
         cfg = DotMap(toml.load(file))
     
@@ -213,6 +214,8 @@ if __name__ == "__main__":
         no_clusters = 5 ## HARD_CODED
         sim_result["s_scores"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, no_clusters))
         sim_result["d_scores"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, no_clusters))
+        sim_result["PCA_components_per_label"] = np.zeros((cfg.Sim.total_MC_it, cfg.Data.n_classes, cfg.GT.n_tests, no_PCA_components))
+
         print(f"Silh_score thresh - {cfg.Test.ss_thres}")
         print(f"DELTA - {cfg.GT.DELTA}")
 
@@ -416,9 +419,10 @@ if __name__ == "__main__":
                             for i in sampled_clients_indices:
                                 if i in malicious_clients:
                                     clients[i].active_data_poisoning(src)
-                        
+                                    num_orig_src = sum(clients[i].train_dataloader.dataset.target == src)
+                                    num_poisoned_src = sum(clients[i].poisoned_train_dataloader.dataset.target == src)
+                                    print(f"Client {i}: Original src: {num_orig_src} --- After poison src: {num_poisoned_src}")
                         sampled_clients = [clients[i] for i in sampled_clients_indices]
-
                         # assign clients to threads
                         client_splits = np.array_split(sampled_clients, cfg.Sim.n_threads) 
                         # perform local training
@@ -427,6 +431,11 @@ if __name__ == "__main__":
                         client_outputs = [c for sublist in client_outputs for c in sublist]
                         # sort the list of dictionaries by the client index
                         client_outputs.sort(key=lambda tup: tup["client_index"])
+                        
+                        if ATTACK == 3:
+                            for i in malicious_clients:
+                                src_cnt = client_outputs[i]["src_cnt"]
+                                print(f"client {i} used {src_cnt} samples from src during training")
 
                         if len(client_outputs) != cfg.Sim.n_clients or len(set([client_outputs[i]["client_index"] for i in range(len(client_outputs))])) != cfg.Sim.n_clients:
                             print("No PASS!")
@@ -485,6 +494,7 @@ if __name__ == "__main__":
                                     else:
                                         test_values, s_scores, d_scores = gt.perform_clustering_and_testing( rec[:, src], pca_per_label[src, :, 0], cfg.Test.ss_thres)
                                         DEC, LLRoutput, LLRinput, td = gt.perform_gt(test_values)
+                                    print(f"DEC: {DEC}")
 
                                 #QI.update_QI_scores(group_accuracies)
                                 
@@ -555,13 +565,11 @@ if __name__ == "__main__":
             checkpoint_dict["LLRO"] = checkpoint_dict["LLRO"].tolist()
             checkpoint_dict["LLRin"] = checkpoint_dict["LLRin"].tolist()
             checkpoint_dict["td_used"] = checkpoint_dict["td_used"].tolist()
-            checkpoint_dict["nm_est"] = checkpoint_dict["nm_est"].tolist()
             checkpoint_dict["syndrome"] = checkpoint_dict["syndrome"].tolist()
             checkpoint_dict["test_values"] = checkpoint_dict["test_values"].tolist()
             checkpoint_dict["malicious_clients"] = checkpoint_dict["malicious_clients"].tolist()
             checkpoint_dict["bsc_channel"] = checkpoint_dict["bsc_channel"].tolist()
             checkpoint_dict["PCA_components_per_label"] = checkpoint_dict["PCA_components_per_label"].tolist()
-            checkpoint_dict["PCA_components"] = checkpoint_dict["PCA_components"].tolist()
             checkpoint_dict["s_scores"] = checkpoint_dict["s_scores"].tolist()
             checkpoint_dict["d_scores"] = checkpoint_dict["d_scores"].tolist()
 
@@ -577,6 +585,12 @@ if __name__ == "__main__":
             if kick_out_clients is True:
                 suffix = "kicked_" + suffix
             sim_title = prefix + suffix
+            
+            # Ensure the directory exists
+            
+            output_dir = os.path.dirname(sim_title)
+            os.makedirs(output_dir, exist_ok=True)  # Create the directory if it doesn't exist
 
+            # Write the JSON data to the file
             with open(sim_title, "w") as convert_file:
                 convert_file.write(json.dumps(checkpoint_dict))

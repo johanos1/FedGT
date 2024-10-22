@@ -8,7 +8,7 @@ MODE_list = [2]
 # 0: permutation attack, 1: random labels, 2: 1->7 label flip, 3:active attack
 attack_list = [3]
 total_MC_it = 1
-n_malicious_list = [3]
+n_malicious_list = [10]
 
 [Data]
 val_size = 100
