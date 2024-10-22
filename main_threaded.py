@@ -148,7 +148,7 @@ if __name__ == "__main__":
         ATTACK,
     ) in sim_params:
         
-        if ATTACK == 2 and n_malicious == 0 and MODE == 2:
+        if (ATTACK == 2 and n_malicious == 0 and MODE == 2) or ATTACK == 3:
             if "mnist" in cfg.Data.data_dir:
                 src = 1
                 target = 7
@@ -166,13 +166,7 @@ if __name__ == "__main__":
             cfg.GT.BCJR_step_threshold,
         ).tolist()        
 
-        no_PCA_components = cfg.PCA.no_comp
-        if cfg.Sim.PCA_simulation is True:
-            print(f"Number of PCA components = {no_PCA_components}")
-            sim_result["no_pca_comp"] = no_PCA_components
-            assert MODE == 2, "Only Mode 2 is supported for PCA sims!"
-            assert len(threshold_vec) == 1, "Only use one threshold please for PCA sims!"
-            assert cfg.GT.group_test_round > cfg.ML.communication_rounds, "GT round should be done later than Comm rounds for PCA sims!"
+        no_PCA_components = 2
 
         noiseless_gt = True if MODE == 3 else False
         no_defence = True if MODE == 0 else False
@@ -184,6 +178,7 @@ if __name__ == "__main__":
         if oracle or no_defence or GM_aggregation:
             threshold_vec = [np.inf]
 
+        # prepare to store results
         # prepare to store results
         sim_result["epochs"] = epochs
         sim_result["val_size"] = cfg.Data.val_size
@@ -197,62 +192,29 @@ if __name__ == "__main__":
         sim_result["wd"] = cfg.ML.wd
         sim_result["momentum"] = cfg.ML.momentum
         sim_result["comm_round"] = cfg.ML.communication_rounds
-        sim_result["client_number"] = n_clients_total
+        sim_result["client_number"] = cfg.Sim.n_clients
         sim_result["total_MC_it"] = cfg.Sim.total_MC_it
         sim_result["threshold_vec"] = threshold_vec
-        sim_result["QI_threshold"] = cfg.QI.threshold
-        sim_result["QI_value"] = cfg.QI.value
-        sim_result["group_acc"] = np.zeros(
-            (len(threshold_vec), cfg.Sim.total_MC_it, cfg.GT.n_tests)
-        )
-        sim_result["group_prec"] = np.zeros(
-            (
-                len(threshold_vec),
-                cfg.Sim.total_MC_it,
-                cfg.GT.n_tests,
-                cfg.Data.n_classes,
-            )
-        )
-        sim_result["group_recall"] = np.zeros(
-            (
-                len(threshold_vec),
-                cfg.Sim.total_MC_it,
-                cfg.GT.n_tests,
-                cfg.Data.n_classes,
-            )
-        )
-        sim_result["group_f1"] = np.zeros(
-            (
-                len(threshold_vec),
-                cfg.Sim.total_MC_it,
-                cfg.GT.n_tests,
-                cfg.Data.n_classes,
-            )
-        )
-        sim_result["bsc_channel"] = np.zeros(
-            (len(threshold_vec), cfg.Sim.total_MC_it, 2, 2)
-        )
-        sim_result["malicious_clients"] = np.zeros(
-            (len(threshold_vec), cfg.Sim.total_MC_it, cfg.Sim.n_clients)
-        )
-        sim_result["DEC"] = np.zeros(
-            (len(threshold_vec), cfg.Sim.total_MC_it, cfg.Sim.n_clients)
-        )
-        sim_result["syndrome"] = np.zeros(
-            (len(threshold_vec), cfg.Sim.total_MC_it, cfg.GT.n_tests)
-        )
-        sim_result["accuracy"] = np.zeros(
-            (len(threshold_vec), cfg.Sim.total_MC_it, cfg.ML.communication_rounds)
-        )
-        sim_result["cf_matrix"] = np.zeros(
-            (
-                len(threshold_vec),
-                cfg.Sim.total_MC_it,
-                cfg.ML.communication_rounds,
-                cfg.Data.n_classes,
-                cfg.Data.n_classes,
-            )
-        )
+        sim_result["group_acc"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, cfg.GT.n_tests))
+        sim_result["group_prec"] = np.zeros((len(threshold_vec),cfg.Sim.total_MC_it,cfg.GT.n_tests,cfg.Data.n_classes,))
+        sim_result["group_recall"] = np.zeros((len(threshold_vec),cfg.Sim.total_MC_it,cfg.GT.n_tests,cfg.Data.n_classes,))
+        sim_result["group_f1"] = np.zeros((len(threshold_vec),cfg.Sim.total_MC_it,cfg.GT.n_tests,cfg.Data.n_classes,))
+        sim_result["bsc_channel"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, 2, 2))
+        sim_result["malicious_clients"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, cfg.Sim.n_clients))
+        sim_result["DEC"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, cfg.Sim.n_clients))
+        sim_result["LLRO"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, cfg.Sim.n_clients))
+        sim_result["LLRin"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, cfg.Sim.n_clients))
+        sim_result["td_used"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it))
+        sim_result["syndrome"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, cfg.GT.n_tests))
+        sim_result["test_values"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, cfg.GT.n_tests))
+        sim_result["accuracy"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, cfg.ML.communication_rounds))
+        sim_result["cf_matrix"] = np.zeros((len(threshold_vec),cfg.Sim.total_MC_it,cfg.ML.communication_rounds,cfg.Data.n_classes,cfg.Data.n_classes,))
+        sim_result["ss_thres"] = cfg.Test.ss_thres
+        no_clusters = 5 ## HARD_CODED
+        sim_result["s_scores"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, no_clusters))
+        sim_result["d_scores"] = np.zeros((len(threshold_vec), cfg.Sim.total_MC_it, no_clusters))
+        print(f"Silh_score thresh - {cfg.Test.ss_thres}")
+        print(f"DELTA - {cfg.GT.DELTA}")
 
         try:
             set_start_method("spawn")
@@ -422,12 +384,12 @@ if __name__ == "__main__":
                 #-----------------------------------------
                 #          Make QI Scoring Object
                 #-----------------------------------------
-                if not (oracle or no_defence or GM_aggregation):
-                    QI = QI_Scoring(
-                        gt.parity_check_matrix,
-                        cfg.QI.threshold,
-                        cfg.QI.value,
-                    )
+                # if not (oracle or no_defence or GM_aggregation):
+                #     QI = QI_Scoring(
+                #         gt.parity_check_matrix,
+                #         cfg.QI.threshold,
+                #         cfg.QI.value,
+                #     )
                 
                 # -----------------------------------------
                 #            Main Loop
@@ -448,7 +410,15 @@ if __name__ == "__main__":
                         # -----------------------------------------
                         # randomly sample n_clients from the total clients without replacement
                         sampled_clients_indices = np.random.choice(n_clients_total, cfg.Sim.n_clients, replace=False)
+                        
+                        # Perform active poisoning if applicable
+                        if ATTACK == 3:
+                            for i in sampled_clients_indices:
+                                if i in malicious_clients:
+                                    clients[i].active_data_poisoning(src)
+                        
                         sampled_clients = [clients[i] for i in sampled_clients_indices]
+
                         # assign clients to threads
                         client_splits = np.array_split(sampled_clients, cfg.Sim.n_threads) 
                         # perform local training
@@ -507,21 +477,16 @@ if __name__ == "__main__":
                                     test_values = syndrome
                                 else: 
                                     group_accuracies, prec, rec, f1, loss_value = gt.get_group_accuracies(client_outputs, server, cfg.Data.n_classes)
-                                    _, _, pca_components, _, _, pca_per_label, _, _ = gt.get_pca_components(client_outputs, server, no_PCA_components, cfg.Data.n_classes)
+                                    _, _, _, _, _, pca_per_label, _, _ = gt.get_pca_components(client_outputs, server, no_PCA_components, cfg.Data.n_classes)
                                     sim_result["PCA_components_per_label"][monte_carlo_iterr, :, :, :] = pca_per_label
-                                    sim_result["PCA_components"][monte_carlo_iterr, :, :] = pca_components
                                     
-                                    Neyman_person=True
-                                    if ATTACK == 0:
-                                        #DEC, LLRoutput = gt.perform_group_test(group_accuracies)
-                                        avg_recall = np.mean(rec, axis=1)
-                                        test_values, s_scores, d_scores = gt.perform_clustering_and_testing(group_accuracies, pca_components[:,0], cfg.Test.ss_thres)
-                                        DEC, LLRoutput, LLRinput, td, nm_est = gt.perform_gt(test_values, Neyman_person)
-                                    elif ATTACK == 2:
+                                    if ATTACK < 2:
+                                        DEC, LLRoutput = gt.perform_group_test(group_accuracies)
+                                    else:
                                         test_values, s_scores, d_scores = gt.perform_clustering_and_testing( rec[:, src], pca_per_label[src, :, 0], cfg.Test.ss_thres)
-                                        DEC, LLRoutput, LLRinput, td, nm_est = gt.perform_gt(test_values, Neyman_person)
+                                        DEC, LLRoutput, LLRinput, td = gt.perform_gt(test_values)
 
-                                QI.update_QI_scores(group_accuracies)
+                                #QI.update_QI_scores(group_accuracies)
                                 
                                 MD = MD + np.sum(gt.DEC[defective == 1] == 0)
                                 FA = FA + np.sum(gt.DEC[defective == 0] == 1)
@@ -536,7 +501,6 @@ if __name__ == "__main__":
                                 sim_result["LLRO"][thres_indx, monte_carlo_iterr, :] = LLRoutput[0]
                                 sim_result["LLRin"][thres_indx, monte_carlo_iterr, :] = LLRinput[0]
                                 sim_result["td_used"][thres_indx, monte_carlo_iterr] = td
-                                sim_result["nm_est"][thres_indx, monte_carlo_iterr] = nm_est
                                 sim_result["syndrome"][thres_indx, monte_carlo_iterr] = syndrome[0]
                                 sim_result["test_values"][thres_indx, monte_carlo_iterr] = test_values
                                 sim_result["s_scores"][thres_indx, monte_carlo_iterr, :] = s_scores
@@ -600,15 +564,6 @@ if __name__ == "__main__":
             checkpoint_dict["PCA_components"] = checkpoint_dict["PCA_components"].tolist()
             checkpoint_dict["s_scores"] = checkpoint_dict["s_scores"].tolist()
             checkpoint_dict["d_scores"] = checkpoint_dict["d_scores"].tolist()
-            if cfg.Sim.PCA_simulation is True:
-                checkpoint_dict["cosine_similarity_per_label"] = checkpoint_dict["cosine_similarity_per_label"].tolist()
-                checkpoint_dict["cosine_similarity_model"] = checkpoint_dict["cosine_similarity_model"].tolist()
-                checkpoint_dict["PCA_components"] = checkpoint_dict["PCA_components"].tolist()
-                checkpoint_dict["PCA_variance"] = checkpoint_dict["PCA_variance"].tolist()
-                checkpoint_dict["PCA_variance_ratio"] = checkpoint_dict["PCA_variance_ratio"].tolist()
-                checkpoint_dict["PCA_variance_per_label"] = checkpoint_dict["PCA_variance_per_label"].tolist()
-                checkpoint_dict["PCA_variance_ratio_per_label"] = checkpoint_dict["PCA_variance_ratio_per_label"].tolist()
-                checkpoint_dict["loss_per_label"] = checkpoint_dict["loss_per_label"].tolist()
 
             prefix_0 = "./results/estimating_nm/"
             if "mnist" in cfg.Data.data_dir:

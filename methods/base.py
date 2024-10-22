@@ -38,6 +38,7 @@ class Base_Client:
         self.epochs = args.epochs
         self.batch_size = args.batch_size
         self.round = 0
+        self.active_poisoning = False
 
     def load_model(self, server_model):
         """Load global model
@@ -98,9 +99,15 @@ class Base_Client:
         test_correct = 0.0
         test_loss = 0.0
         test_sample_number = 0.0
+        
+        if self.active_poisoning:
+            train_dataloader = self.poisoned_train_dataloader
+        else:
+            train_dataloader = self.train_dataloader
+        
         # No training takes place here
         with torch.no_grad():
-            for batch_idx, (x, target) in enumerate(self.train_dataloader):
+            for batch_idx, (x, target) in enumerate(train_dataloader):
                 x = x.to(self.device)
                 target = target.to(self.device)
                 pred = self.model(x)
@@ -115,6 +122,53 @@ class Base_Client:
             logging.info("************* Client {} Acc = {:.2f} **************".format(self.client_index, acc))
         return acc
 
+    def active_data_poisoning(self, poison_target, fraction = 1):
+        self.active_poisoning = True
+        # get the logits for the target
+        self.model.to(self.device)
+        self.model.eval()
+        
+        # store logits for the target label
+        logits = []
+        with torch.no_grad():
+            for batch_idx, (x, target) in enumerate(self.train_dataloader):
+                x = x.to(self.device)
+                target = target.to(self.device)
+                pred = self.model(x)
+                logits.append(pred)
+        logits = torch.cat(logits, dim=0).to("cpu")
+        
+        # Get target indices
+        target_indices = self.train_dataloader.dataset.target == poison_target
+        # drop the last nonfull batch
+        target_indices = target_indices[:logits.shape[0]]
+        # pick the rows corresponding to the target label
+        target_logits = logits[target_indices,:]
+        target_indices = torch.nonzero(target_indices, as_tuple=False).squeeze()
+        # pick the rows corresponding to correct classification
+        correct_classification_mask = (torch.argmax(target_logits, dim=1) == poison_target)
+
+        target_logits = target_logits[correct_classification_mask]
+        target_indices = target_indices[correct_classification_mask]
+        # find the number of samples to poison
+        n_poison_samples = min(target_logits.shape[0], int(fraction * len(target_logits)))
+        # get the two top logit values for each of the n_poison_samples
+        top_logits, top_indices = torch.topk(target_logits, k=2, dim=1)
+        
+        # Sort with respect to logit of the poisoned target class
+        first_entry = top_logits[:, 0]
+        sorted_indices = torch.argsort(first_entry, descending=True)
+        sorted_top_logits = top_logits[sorted_indices]
+        sorted_top_indices = top_indices[sorted_indices]
+        target_indices = target_indices[sorted_indices][0:n_poison_samples]
+        
+        # pick as many samples as n_poison_samples to swap the label for based on the top logits
+        poisoning_labels = sorted_top_indices[0:n_poison_samples, 1]
+        
+        # create poisoned dataloader by replacing the most confident samples with the second most confident class label
+        self.poisoned_train_dataloader = copy.deepcopy(self.train_dataloader)
+        self.poisoned_train_dataloader.dataset.target[target_indices] = poisoning_labels
+    
     def test_classlevel(self):
         # move model to CPU/GPU
         self.model.to(self.device)
