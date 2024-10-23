@@ -194,20 +194,20 @@ class Data_Manager:
 
 class ISICDataset(Dataset):
     def __init__(self, x, y, indices, root_dir):
-        self.y = y
-        self.x = x
+        self.target = y
+        self.data = x
         self.indices = indices
         self.root_dir = root_dir
 
     def __len__(self):
-        return len(self.y)
+        return len(self.target)
 
     def __getitem__(self, idx):
         # Load image
-        img_path = self.root_dir + '/' + self.x['image'][idx] + '.jpg'
+        img_path = self.root_dir + '/' + self.data['image'][idx] + '.jpg'
         img = Image.open(img_path).convert('RGB')  # Convert to RGB (in case some images are grayscale)
 
-        return img, self.y[idx]
+        return img,  self.target[idx]
 
 
 class Custom_Dataset(Dataset):

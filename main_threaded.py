@@ -418,10 +418,11 @@ if __name__ == "__main__":
                         if ATTACK == 3:
                             for i in sampled_clients_indices:
                                 if i in malicious_clients:
-                                    clients[i].active_data_poisoning(src)
-                                    num_orig_src = sum(clients[i].train_dataloader.dataset.target == src)
-                                    num_poisoned_src = sum(clients[i].poisoned_train_dataloader.dataset.target == src)
+                                    clients[i].active_data_poisoning()
+                                    num_orig_src = sum(np.array(clients[i].train_dataloader.dataset.target) == src)
+                                    num_poisoned_src = sum(np.array(clients[i].poisoned_train_dataloader.dataset.target) == src)
                                     print(f"Client {i}: Original src: {num_orig_src} --- After poison src: {num_poisoned_src}")
+                        
                         sampled_clients = [clients[i] for i in sampled_clients_indices]
                         # assign clients to threads
                         client_splits = np.array_split(sampled_clients, cfg.Sim.n_threads) 
@@ -495,6 +496,8 @@ if __name__ == "__main__":
                                         test_values, s_scores, d_scores = gt.perform_clustering_and_testing( rec[:, src], pca_per_label[src, :, 0], cfg.Test.ss_thres)
                                         DEC, LLRoutput, LLRinput, td = gt.perform_gt(test_values)
                                     print(f"DEC: {DEC}")
+                                    print(f"group_accuracies: {group_accuracies}")
+                                    print(f"syndrome: {syndrome}")
 
                                 #QI.update_QI_scores(group_accuracies)
                                 
@@ -537,6 +540,8 @@ if __name__ == "__main__":
                         acc[0, r] = balanced_acc
 
                         sim_result["cf_matrix"][thres_indx, monte_carlo_iterr, r, :, :] = cf_matrix
+                        if ATTACK == 3:
+                            print(f"src recall: {recalls[src]}")
 
                         round_end = time.time()
                         if prev_and_cross_sim:

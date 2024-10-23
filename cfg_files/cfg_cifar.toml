@@ -4,11 +4,11 @@
 n_threads = 5
 n_clients = 15 # 15
 # 0: no defence (keep the malicous nodes), 1: oracle (remove all malicious nodes), 2: group testing, 3: noiseless group testing, 4: GM_aggregation
-MODE_list = [2]  
+MODE_list = [4]  
 # 0: permutation attack, 1: random labels, 2: 1->7 label flip, 3:active attack
 attack_list = [3]
-total_MC_it = 5
-n_malicious_list = [3]
+total_MC_it = 1
+n_malicious_list = [5]
 
 [Data]
 val_size = 100

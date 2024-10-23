@@ -1,13 +1,13 @@
 # Note that several of the parameters are given as lists to enable sweeping over parameters.
 # Check the Loss!!!!!
 [Sim]
-n_threads = 3
+n_threads = 2
 n_clients = 15
 # 0: no defence (keep the malicous nodes), 1: oracle (remove all malicious nodes), 2: group testing, 3: noiseless group testing, 4: GM_aggregation
 MODE_list = [2] 
 # 0: permutation attack, 1: random labels, 2: 1->7 label flip, 3: active attack
-n_malicious_list = [0]
-attack_list = [2]
+n_malicious_list = [5]
+attack_list = [3]
 total_MC_it = 1
 PCA_simulation = false
 

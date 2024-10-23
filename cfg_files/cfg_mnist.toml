@@ -8,7 +8,7 @@ MODE_list = [2]
 # 0: permutation attack, 1: random labels, 2: 1->7 label flip, 3:active attack
 attack_list = [3]
 total_MC_it = 1
-n_malicious_list = [10]
+n_malicious_list = [5]
 
 [Data]
 val_size = 100
@@ -24,13 +24,13 @@ client_sample = 1.0
 lr = 0.01
 momentum = 0
 wd = 0
-communication_rounds = 5
+communication_rounds = 15
 epochs_list = [1]
 batch_size_list = [64]
 
 [GT]
 n_tests = 8
-group_test_round = 3
+group_test_round = 5
 test_threshold = 0.96 # GT threshold
 crossover_probability_list = [0.05]
 prevalence_list = [0.133]
