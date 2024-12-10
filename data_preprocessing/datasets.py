@@ -97,8 +97,8 @@ class Data_Manager:
 
     def splitISIC2019(self, n_target):
         # get all the indices that are used for training
-        x = self.train_dataset.x.iloc[self.train_dataset.indices]
-        y = self.train_dataset.y[self.train_dataset.indices]
+        x = self.train_dataset.data.iloc[self.train_dataset.indices] # was x instead of data
+        y = self.train_dataset.target[self.train_dataset.indices] # was y instead of data
         
         # Step 1: split training indices into centers
         x_grouped = x.groupby('dataset').apply(lambda p: p.index.tolist()).tolist()

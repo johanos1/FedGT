@@ -1,126 +1,94 @@
 import numpy as np
 import logging
 import ctypes
+# Calling C functions with numpy inputs
+from numpy.ctypeslib import ndpointer
 import torch.nn
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 
-# Calling C functions with numpy inputs
-from numpy.ctypeslib import ndpointer
+def is_monotonic_array(array):
+    
+    return np.all(np.diff(array) > 0) or np.all(np.diff(array) < 0)
 
 
-class Group_Test:
+class Quantitative_Group_Test:
     def __init__(
         self,
         n_clients,
         n_tests,
-        P_MD_test = 0.05,
-        P_FA_test = 0.05,
-        prevalence = None,
-        threshold_dec = None,
-        beta=None
+        prevalence,
+        is_irregular = True,
+        BP_iteration = 100
     ):
         self.n_clients = n_clients
         self.n_tests = n_tests
-        self.parity_check_matrix = self._get_test_matrix()
+        self.irregular = is_irregular
+        if self.irregular == True and self.n_clients == 15 and self.n_tests == 8:
+            self.dc = 4
+            self.dv = 4
+        self.BP_iteration = BP_iteration
+        (self.parity_check_matrix, self.VN, self.CN, self.vn_deg, self.cn_deg) = self._get_test_matrix()
         assert self.n_tests == self.parity_check_matrix.shape[0], "Wrong no of rows in H!"
         assert self.n_clients == self.parity_check_matrix.shape[1], "Wrong no of cols in H!"
-        self.threshold_dec = threshold_dec
 
         # Set up the decoding algorithm based on C-code
-        lib = ctypes.cdll.LoadLibrary("./src/C_code/BCJR_4_python.so")
-        self.fun = lib.BCJR
-        self.fun.restype = None
+        lib = ctypes.cdll.LoadLibrary("./src/C_code/QGT/LL_augmented_BP_decoder_correct.so")
         p_ui8_c = ndpointer(ctypes.c_uint8, flags="C_CONTIGUOUS")
+        p_i16_c = ndpointer(ctypes.c_int16, flags="C_CONTIGUOUS")
         p_d_c = ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")
+        self.fun = lib.BP_decoder
+        self.fun.restype = None
         self.fun.argtypes = [
+            ctypes.c_uint16,
+            ctypes.c_uint16,
+            ctypes.c_uint8,
+            ctypes.c_uint8,
+            p_i16_c,
+            p_i16_c,
             p_ui8_c,
             p_d_c,
+            ctypes.c_uint16,
             p_ui8_c,
-            p_d_c,
-            ctypes.c_double,
-            ctypes.c_int,
-            ctypes.c_int,
-            p_d_c,
+            p_ui8_c,
             p_ui8_c,
         ]
 
-        self.LLRO = np.empty((1, self.n_clients), dtype=np.double)
         self.DEC = np.empty((1, self.n_clients), dtype=np.uint8)
 
         if prevalence == 0:
             prevalence = 0.1  # this is based on a mismatched idea
-        if prevalence is not None:
-            self.LLRi = np.log((1 - prevalence) / prevalence) * np.ones((1, self.n_clients), dtype=np.double)
-        self.ChannelMatrix = np.array([[1 - P_FA_test, P_FA_test], [P_MD_test, 1 - P_MD_test]], dtype=np.double)
-        self.beta = beta if beta is not None else 0.5
+
+        self.LLRi = prevalence * np.ones(self.n_clients, dtype=np.double)
 
     def _get_test_matrix(self):
-        # fmt: off
-        if self.n_clients == self.n_tests:
-            parity_check_matrix = np.identity(self.n_clients, dtype=np.uint8)
-            return parity_check_matrix
-        if self.n_clients == 15:
-            if self.n_tests == 8:
-                parity_check_matrix = np.array(
-                    [
-                        [1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
-                        [0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
-                        [0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0],
-                        [0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0],
-                        [0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0],
-                        [0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0],
-                        [0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 0],
-                        [0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1],
-                    ],
-                    dtype=np.uint8,
-                )
-            if self.n_tests == 4:
-                parity_check_matrix = np.array(
-                    [
-                        [1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0],
-                        [0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0],
-                        [0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0],
-                        [0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1],
-                    ],
-                    dtype = np.uint8,
-                )
-        elif self.n_clients == 31:
-            parity_check_matrix = np.array(
-                [
-                    [1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,],
-                    [0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,],
-                    [0, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0,],
-                    [0, 0, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0,],
-                    [0, 0, 0, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0,],
-                    [0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0,],
-                    [0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0,],
-                    [0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0,],
-                    [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0,],
-                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1,],
-                ],
-                dtype=np.uint8,
-            )
-        elif self.n_clients == 30:
-            parity_check_matrix = np.array(
-                [
-                    [1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                    [0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                    [0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                    [0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
-                    [0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
-                    [0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
-                    [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0],
-                    [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0],
-                    [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0],
-                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0],
-                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0],
-                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1]], 
-                dtype=np.uint8,
-            )
-        # fmt: on
-        return parity_check_matrix
+        if self.irregular == True:
+            filename = f"ldpc_h_irreg_dv_{self.dv}_dc_{self.dc}_N{self.n_clients}_Nk{self.n_tests}.txt"
+        else:
+            filename = f"ldpc_h_reg_dv_{self.dv}_dc_{self.dc}_N{self.n_clients}_Nk{self.n_tests}.txt"
+        VN = np.loadtxt("./src/matrices/VN_" + filename, dtype="int16", delimiter=" ")
+        assert VN.shape[0] == self.n_clients, "Wrong number of rows with VN"
+        assert VN.shape[1] == self.dv, "Wrong number of cols with VN"
+        CN = np.loadtxt("./src/matrices/CN_" + filename, dtype="int16", delimiter=" ")
+        assert CN.shape[0] == self.n_tests, "Wrong number of rows with CN"
+        assert CN.shape[1] == self.dc, "Wrong number of cols with CN"
+
+        if self.irregular == True:
+            vn_deg = np.loadtxt("./src/matrices/vn_deg_" + filename, dtype="uint8", delimiter=" ")
+            assert vn_deg.shape[0] == self.n_clients, "Wrong number of rows with vn_deg"
+            cn_deg = np.loadtxt("./src/matrices/cn_deg_" + filename, dtype="uint8", delimiter=" ")
+            assert cn_deg.shape[0] == self.n_tests, "Wrong number of elements with cn_deg"
+        else:
+            vn_deg = self.dv * np.ones(self.n_clients, dtype=np.uint8)
+            cn_deg = self.dc * np.ones(self.n_tests, dtype=np.uint8)
+            assert vn_deg.shape[0] == self.n_clients, "Wrong number of rows with vn_deg"
+            assert cn_deg.shape[0] == self.n_tests, "Wrong number of elements with cn_deg"
+
+        parity_check_matrix = np.zeros((self.n_tests, self.n_clients), dtype=np.uint8)
+        for i in range(self.n_tests):
+            parity_check_matrix[i, CN[i, : cn_deg[i]]] = 1
+        return parity_check_matrix, VN, CN, vn_deg, cn_deg
     
     def _dunn_index(self, data, labels, centroids): 
         num_samples = len(data)
@@ -156,54 +124,18 @@ class Group_Test:
         dull_index = enumerator/denumerator
         return dull_index
     
-    def perform_gt(self, test_values, Neyman_person=False):
+    def noiseless_group_test(self, syndrome):
+        
+        self.fun(self.n_clients, self.n_tests, self.dv, self.dc, self.VN, self.CN, syndrome, self.LLRi, self.BP_iteration, self.cn_deg, self.vn_deg, self.DEC)
+        return self.DEC
+    
+    def perform_gt(self, test_values):
 
         tests = np.zeros((1, self.n_tests), dtype=np.uint8)
         tests[0, :] = test_values
-        if self.n_clients == 15:
-            look_up_nm = [5, 5, 5, 4, 3, 3, 2, 1, 0] #look_up_nm = [0, 1, 2, 3, 3, 4, 5, 5, 5]
-        elif self.n_clients == 30:
-            look_up_nm = [8, 8, 8, 8, 7, 6, 5, 5, 4, 3, 2, 1, 0] # Make this full!!!!
-        nm_est = look_up_nm[np.sum(tests[0, :] == 0)]
-        prev_est = nm_est / self.n_clients
-        if nm_est == 0:
-            prev_est = 0.1
-        LLRinput = np.log((1 - prev_est) / prev_est) * np.ones((1, self.n_clients), dtype=np.double)
-        if Neyman_person == False:
-            td = 0.0
-        else:
-            if self.n_clients == 15:
-                if self.beta == 0.5 or self.beta == None:
-                    DELTA_look_up = [-np.log((1 - prev_est) / prev_est), -1, -1.2, -0.5, 0.0, 0.0] # for nm = 0 (td =0.0), 1, 2, 3, 4, 5
-                elif self.beta == 0.25:
-                    DELTA_look_up = [-np.log((1 - prev_est) / prev_est), -1, -1.3, -1.1, -0.9, -1.0] # for nm = 0 (td =0.0), 1, 2, 3, 4, 5
-                elif self.beta == 0.75:
-                    DELTA_look_up = [-np.log((1 - prev_est) / prev_est), -1, 0.15, 0.0, 0.0, 0.0] # for nm = 0 (td =0.0), 1, 2, 3, 4, 5
-            elif self.n_clients == 30:
-                DELTA_look_up = [-np.log((1 - prev_est) / prev_est), -1, -0.9, -0.5, -0.3, -0.2, 0.0, 0.0, 0.0] # for nm = 0 (td =0.0),1,2,3,4,5,6,7,8 #n=30
-            DELTA = DELTA_look_up[nm_est]
-            td = np.log((1 - prev_est) / prev_est) + DELTA
-        self.fun(
-            self.parity_check_matrix,
-            LLRinput, #self.LLRi,
-            tests,
-            self.ChannelMatrix,
-            td, #self.threshold_dec,
-            self.n_clients,
-            self.n_tests,
-            self.LLRO,
-            self.DEC,
-        )
-        if Neyman_person == False:
-            idx_sort = np.argsort(self.LLRO) #check if DEC is always 0 
-            if nm_est != 0:
-                self.DEC[0, idx_sort[:, :nm_est]] = 1
-                identical_soft = np.where(self.LLRO[0,:] == self.LLRO[0, idx_sort][0, nm_est-1])[0]
-                if len(identical_soft) > 1:
-                    self.DEC[0, identical_soft] = 1
-                td = self.LLRO[0, idx_sort][0, nm_est] 
-        return self.DEC, self.LLRO, LLRinput, td, nm_est
-    
+        self.fun(self.n_clients, self.n_tests, self.dv, self.dc, self.VN, self.CN, tests, self.LLRi, self.BP_iteration, self.cn_deg, self.vn_deg, self.DEC)
+        return self.DEC
+
     def perform_clustering_and_testing(self, group_acc, group_PCA, ss_thres):
 
         assert group_acc.size == group_PCA.size, "Wrong size of the group acc and group PCA!"
@@ -236,47 +168,31 @@ class Group_Test:
         temp_array = -1 * np.ones((tot_clust, 3))
         for key, items in indices_dict.items():
             temp_array[key, 0] = len(items)
-            temp_array[key, 1] = np.mean(group_acc[items]) if group_acc[items].size != 0 else -1 # Check this plz
-            temp_array[key, 2] = np.mean(group_PCA[items]) if group_PCA[items].size != 0 else -1 # Check this as well
+            temp_array[key, 1] = np.mean(group_acc[items]) if group_acc[items].size != 0 else -1 # Mean accuracy
+            temp_array[key, 2] = np.mean(group_PCA[items]) if group_PCA[items].size != 0 else -1 # Mean of first component
         temp_array = temp_array.transpose()
         tests = np.ones(self.n_tests, dtype=np.uint8)
-        if np.sum(temp_array[1, :] == np.max(temp_array[1, :])) == 1:
-            idx_max = np.argmax(temp_array[1, :])
-            tests[indices_dict[idx_max]] = 0
-            return tests, s_scores, d_scores
-        else:
-            sorted_PCA = np.argsort(temp_array[2,:])
-            sorted_test_ready = temp_array[:, sorted_PCA]
-            sorted_idxs = np.arange(tot_clust)[sorted_PCA]
+        sorted_PCA = np.argsort(temp_array[2,:])
+        sorted_test_ready = temp_array[:, sorted_PCA]
+        sorted_idxs = np.arange(tot_clust)[sorted_PCA]
+        if is_monotonic_array(sorted_test_ready[1, :]):
+            ind_acc_sort = np.argsort(sorted_test_ready[1,:])[::-1] # either 0,1,...,tot_clust-1 or reversed
+        else: #if not monotonic, just check the polar opposites !!!
             if sorted_test_ready[1, 0] > sorted_test_ready[1, -1]:
-                tests[indices_dict[sorted_idxs[0]]] = 0
+                ind_acc_sort = np.arange(tot_clust)
             elif sorted_test_ready[1, 0] < sorted_test_ready[1, -1]:
-                tests[indices_dict[sorted_idxs[-1]]] = 0
+                ind_acc_sort = np.arange(tot_clust - 1, -1, -1)
             elif sorted_test_ready[1, 0] == sorted_test_ready[1,-1]:
                 if sorted_test_ready[0, 0] > sorted_test_ready[0, -1]:
-                    tests[indices_dict[sorted_idxs[0]]] = 0
+                    ind_acc_sort = np.arange(tot_clust)
                 elif sorted_test_ready[0, 0] < sorted_test_ready[0, -1]:
-                    tests[indices_dict[sorted_idxs[-1]]] = 0
+                    ind_acc_sort = np.arange(tot_clust - 1, -1, -1)
                 elif sorted_test_ready[0, 0] == sorted_test_ready[0, -1]:
                     tests = np.zeros(self.n_tests, dtype=np.uint8)
-            return tests, s_scores, d_scores
-
-    def noiseless_group_test(self, syndrome):
-
-        tests = np.zeros((1, self.n_tests), dtype=np.uint8)
-        tests[0, syndrome[0, :] > 0] = 1
-        self.fun(
-            self.parity_check_matrix,
-            self.LLRi,
-            tests,
-            self.ChannelMatrix,
-            self.threshold_dec,
-            self.n_clients,
-            self.n_tests,
-            self.LLRO,
-            self.DEC,
-        )
-        return self.DEC, self.LLRO
+                    return tests, s_scores, d_scores
+        for id_s, id in enumerate(sorted_idxs):
+            tests[indices_dict[id]] = ind_acc_sort[id_s]
+        return tests, s_scores, d_scores
 
     def get_group_accuracies(self, client_models, server, num_classes=10):
         group_acc = np.zeros(self.n_tests)

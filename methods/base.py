@@ -75,12 +75,17 @@ class Base_Client:
         else:
             train_dataloader = self.train_dataloader
         
-        print(f"Client {self.client_index}, bincount: {torch.bincount(torch.from_numpy(train_dataloader.dataset.target))}")
+        # if isinstance(train_dataloader.dataset.target, np.ndarray):
+        #     print(f"Client {self.client_index}, bincount: {torch.bincount(torch.from_numpy(train_dataloader.dataset.target))}")
+        # elif isinstance(train_dataloader.dataset.target, List):
+        #     print(f"Client {self.client_index}, bincount: {torch.bincount(torch.tensor(train_dataloader.dataset.target))}")
+        # else:
+        #     print(f"Client {self.client_index}, bincount: {torch.bincount(train_dataloader.dataset.target)}")
+        
         for epoch in range(self.epochs):
             batch_loss = []
             src_cnt = 0
             for batch_idx, (images, labels) in enumerate(train_dataloader):
-                # logging.info(images.shape)
                 if self.active_poisoning:
                     src_cnt += sum(labels==src).item()
                 
@@ -158,7 +163,6 @@ class Base_Client:
         if poison_target is None:
             classified_labels = torch.argmax(logits, dim=1)
             true_labels = self.train_dataloader.dataset.target[0:classified_labels.shape[0]]
-            
             n_poison_samples = int(fraction * logits.shape[0])
             #poisoning_labels = torch.argmin(logits, dim=1)[0:n_poison_samples]
             _, poisoning_labels = torch.topk(logits, k=2, dim=1)
@@ -187,12 +191,12 @@ class Base_Client:
             # pick the rows corresponding to correct classification
             correct_classification_mask = (torch.argmax(target_logits, dim=1) == poison_target)
 
-            target_logits = target_logits[correct_classification_mask]
-            target_indices = target_indices[correct_classification_mask]
+            #target_logits = target_logits[correct_classification_mask]
+            #target_indices = target_indices[correct_classification_mask]
             # find the number of samples to poison
             n_poison_samples = min(target_logits.shape[0], int(fraction * len(target_logits)))
             # get the two top logit values for each of the n_poison_samples
-            top_logits, top_indices = torch.topk(target_logits, k=self.num_classes, dim=1)
+            top_logits, top_indices = torch.topk(target_logits, k=2, dim=1) #self.num_classes
             
             # Sort with respect to logit of the poisoned target class
             first_entry = top_logits[:, 0]
@@ -200,16 +204,20 @@ class Base_Client:
             sorted_top_logits = top_logits[sorted_indices]
             sorted_top_indices = top_indices[sorted_indices]
             target_indices = target_indices[sorted_indices][0:n_poison_samples]
-            
+            correct_classification_mask = correct_classification_mask[sorted_indices] # Added this - MXH
+
             # pick as many samples as n_poison_samples to swap the label for based on the top logits
-            poisoning_labels = sorted_top_indices[0:n_poison_samples, -1]
+            ### Should work only for fraction = 1
+            poisoning_labels = sorted_top_indices[0:n_poison_samples, 0]
+            poisoning_labels[correct_classification_mask] = sorted_top_indices[correct_classification_mask, -1]
+            #poisoning_labels = sorted_top_indices[0:n_poison_samples, 1] # change to -1 for all classes?
             
             # create poisoned dataloader by replacing the most confident samples with the second most confident class label
             self.poisoned_train_dataloader = copy.deepcopy(self.train_dataloader)
             
             if type(self.poisoned_train_dataloader.dataset.target) is list:
                 for i, idx in enumerate(target_indices):
-                    self.poisoned_train_dataloader.dataset.target[idx] = poisoning_labels[i]
+                    self.poisoned_train_dataloader.dataset.target[idx.item()] = poisoning_labels[i].item() # changed this for ISIC
             else:        
                 self.poisoned_train_dataloader.dataset.target[target_indices] = poisoning_labels
     
@@ -290,13 +298,8 @@ class Base_Server:
         self.round = 0
         self.n_threads = args.n_threads
         self.aggregation_method = args.aggregation
-        if args.aggregation == "FedADAM" or args.aggregation == "FedAdagrad" or args.aggregation == "FedYogi":
-            self.momentum1 = None
-            self.momentum2 = None
-            self.tau = 1e-3 #0.05 #1e-3 
-            self.lr = 0.01 #2*self.tau - 2e-04 #0.0031622776601683 # 2*self.tau # 2*self.tau +
-            self.beta_1 = 0.9 #0.9# 0.9 #0#0.001 #0.0 # 0.9
-            self.beta_2 = 0.99 #0.99 #0.999 #0.999 #1.0 #0.99
+        if self.aggregation_method == "MKrum" and args.n_malicious is not None:
+            self.n_malicious = args.n_malicious
 
     def run(self, received_info: List[OrderedDict]) -> List[OrderedDict]:
         """Aggregater client models and evaluate accuracy
@@ -310,16 +313,12 @@ class Base_Server:
         # aggregate client models
         if self.aggregation_method == "GM":
             server_outputs = self.GM_aggregation(received_info)
-        elif self.aggregation_method == "FedADAM":
-            server_outputs = self.FedAdam_online(received_info)#self.FedAdam(received_info)
-        elif self.aggregation_method == "FedAdagrad":
-            server_outputs = self.FedAdagrad(received_info)
-        elif self.aggregation_method == "FedYogi":
-            server_outputs = self.FedYogi(received_info)
         elif self.aggregation_method == "Avg":
             server_outputs = self.aggregate_models(received_info)
+        elif self.aggregation_method == "MKrum":
+            server_outputs = self.Multi_Krum(received_info, update_server=True, n_malicious=self.n_malicious)
         else:
-            assert False, "Vari karin me agregimin"
+            assert False, "The aggregation method is not supported yet!!!"
 
         # check accuracy on test set
         acc, cf_matrix, class_prec, class_recall, class_f1 = self.evaluate(test_data=True)
@@ -337,202 +336,6 @@ class Base_Server:
 
     def start(self):
         return self.model.cpu().state_dict() 
-
-    def FedAdam_online(self, client_info, update_server=True):
-        """Server aggregation of client models with Adam optimizer (FedOPT idea)
-
-        Args:
-            client_info (_type_): includes the local models, index, accuracy, num samples
-
-        Returns:
-            _type_: list of new global model, one copy for each thread
-        """
-        # sort clients with respect to index
-        client_info.sort(key=lambda tup: tup["client_index"])
-        # pick only the weights from the clients
-        client_sd = [c["weights"] for c in client_info]
-        # compute fraction of data samples each client has
-        cw = [c["num_samples"] / sum([x["num_samples"] for x in client_info]) for c in client_info]
-        # load the previous server model
-        ssd = self.model.state_dict()
-        Delta = OrderedDict()
-        # go through each layer in model and replace with weighted average of client models
-        for key in ssd.keys():
-            Delta[key] = sum([(sd[key].to("cpu") - ssd[key].to("cpu")) * cw[i] for i, sd in enumerate(client_sd)])
-        mt = OrderedDict()
-        vt = OrderedDict()
-        if self.momentum1 == None:
-            assert self.momentum2 == None, "Second momentum not None!!!"
-            self.momentum1 = OrderedDict()
-            self.momentum2 = OrderedDict()
-            for key in Delta.keys():
-                self.momentum1[key] = 0.0
-                self.momentum2[key] = self.tau **2
-        for key in Delta.keys():
-            g = Delta[key]
-            mt[key] = self.beta_1 * self.momentum1[key] + (1-self.beta_1) * g
-            vt[key] = self.beta_2 * self.momentum2[key] + (1-self.beta_2)* torch.mul(g, g)
-            m_hat = mt[key]# / (1 - self.beta_1)
-            v_hat = vt[key]# / (1 - self.beta_2)
-            ssd[key] = ssd[key] + self.lr * torch.div(m_hat.detach().to(ssd[key].device), torch.sqrt(v_hat.detach().to(ssd[key].device)) + self.tau) # sanity check for vt
-
-        if update_server is True:
-            # update server model with the client average
-            self.model.load_state_dict(ssd)
-            self.momentum1 = mt #
-            self.momentum2 = vt #
-            # return a copy of the aggregated model
-            return self.model.cpu().state_dict() 
-        else:
-            return ssd
-    
-    def FedYogi(self, client_info, update_server=True):
-        """Server aggregation of client models with Adam optimizer (FedOPT idea)
-
-        Args:
-            client_info (_type_): includes the local models, index, accuracy, num samples
-
-        Returns:
-            _type_: list of new global model, one copy for each thread
-        """
-        # sort clients with respect to index
-        client_info.sort(key=lambda tup: tup["client_index"])
-        # pick only the weights from the clients
-        client_sd = [c["weights"] for c in client_info]
-        # compute fraction of data samples each client has
-        cw = [c["num_samples"] / sum([x["num_samples"] for x in client_info]) for c in client_info]
-        # load the previous server model
-        ssd = self.model.state_dict()
-        Delta = OrderedDict()
-        # go through each layer in model and replace with weighted average of client models
-        for key in ssd.keys():
-            Delta[key] = sum([(sd[key].to("cpu") - ssd[key].to("cpu")) * cw[i] for i, sd in enumerate(client_sd)])
-        mt = OrderedDict()
-        vt = OrderedDict()
-        if self.momentum1 == None:
-            assert self.momentum2 == None, "Second momentum not None!!!"
-            self.momentum1 = OrderedDict()
-            self.momentum2 = OrderedDict()
-            for key in Delta.keys():
-                self.momentum1[key] = 0.0
-                self.momentum2[key] = self.tau **2
-        for key in Delta.keys():
-            g = Delta[key]
-            mt[key] = self.beta_1 * self.momentum1[key] + (1-self.beta_1) * g
-            g_squared = torch.mul(g, g)
-            vt[key] = self.momentum2[key] - (1-self.beta_2)* g_squared * torch.sign(self.momentum2[key] - g_squared)
-            m_hat = mt[key]# / (1 - self.beta_1)
-            v_hat = vt[key]# / (1 - self.beta_2)
-            ssd[key] = ssd[key] + self.lr * torch.div(m_hat.detach().to(ssd[key].device), torch.sqrt(v_hat.detach().to(ssd[key].device)) + self.tau) # sanity check for vt
-
-        if update_server is True:
-            # update server model with the client average
-            self.model.load_state_dict(ssd)
-            self.momentum1 = mt #
-            self.momentum2 = vt #
-            # return a copy of the aggregated model
-            return self.model.cpu().state_dict() 
-        else:
-            return ssd
-
-    def FedAdagrad(self, client_info, update_server=True):
-        """Server aggregation of client models with Adam optimizer (FedOPT idea)
-
-        Args:
-            client_info (_type_): includes the local models, index, accuracy, num samples
-
-        Returns:
-            _type_: list of new global model, one copy for each thread
-        """
-        # sort clients with respect to index
-        client_info.sort(key=lambda tup: tup["client_index"])
-        # pick only the weights from the clients
-        client_sd = [c["weights"] for c in client_info]
-        # compute fraction of data samples each client has
-        cw = [c["num_samples"] / sum([x["num_samples"] for x in client_info]) for c in client_info]
-        # load the previous server model
-        ssd = self.model.state_dict()
-        Delta = OrderedDict()
-        # go through each layer in model and replace with weighted average of client models
-        for key in ssd.keys():
-            Delta[key] = sum([(sd[key].to("cpu") - ssd[key].to("cpu")) * cw[i] for i, sd in enumerate(client_sd)])
-        mt = OrderedDict()
-        vt = OrderedDict()
-        if self.momentum1 == None:
-            assert self.momentum2 == None, "Second momentum not None!!!"
-            self.momentum1 = OrderedDict()
-            self.momentum2 = OrderedDict()
-            for key in Delta.keys():
-                self.momentum1[key] = 0.0
-                self.momentum2[key] = self.tau **2
-        for key in Delta.keys():
-            g = Delta[key]
-            mt[key] = self.beta_1 * self.momentum1[key] + (1-self.beta_1) * g
-            vt[key] = self.momentum2[key] + torch.mul(g, g)
-            m_hat = mt[key]# / (1 - self.beta_1)
-            v_hat = vt[key]# / (1 - self.beta_2)
-            ssd[key] = ssd[key] + self.lr * torch.div(m_hat.detach().to(ssd[key].device), torch.sqrt(v_hat.detach().to(ssd[key].device)) + self.tau) # sanity check for vt
-
-        if update_server is True:
-            # update server model with the client average
-            self.model.load_state_dict(ssd)
-            self.momentum1 = mt #
-            self.momentum2 = vt #
-            # return a copy of the aggregated model
-            return self.model.cpu().state_dict() 
-        else:
-            return ssd
-
-    def FedAdam(self, client_info, update_server=True):
-        """Server aggregation of client models with Adam optimizer (FedOPT idea)
-
-        Args:
-            client_info (_type_): includes the local models, index, accuracy, num samples
-
-        Returns:
-            _type_: list of new global model, one copy for each thread
-        """
-        # sort clients with respect to index
-        client_info.sort(key=lambda tup: tup["client_index"])
-        # pick only the weights from the clients
-        client_sd = [c["weights"] for c in client_info]
-        # compute fraction of data samples each client has
-        cw = [c["num_samples"] / sum([x["num_samples"] for x in client_info]) for c in client_info]
-        # load the previous server model
-        ssd = self.model.state_dict()
-        Delta = {k: v.clone() for k, v in ssd.items()}
-        # go through each layer in model and replace with weighted average of client models
-        for key in Delta:
-            Delta[key] = sum([(sd[key].to("cpu") - ssd[key].to("cpu")) * cw[i] for i, sd in enumerate(client_sd)])
-        mt = {k: v.clone() for k, v in ssd.items()}
-        vt = {k: v.clone() for k, v in ssd.items()}
-        if self.momentum1 is None:
-            for key in Delta:
-                mt[key] = (1-self.beta_1) * Delta[key]
-        else:
-            for key in Delta:
-                mt[key] =self.beta_1 * self.momentum1[key] + (1-self.beta_1) * Delta[key] 
-        if self.momentum2 is None:
-            for key in Delta:
-                vt[key] = self.beta_2 * self.tau ** 2 + (1-self.beta_2)*(Delta[key] **2)
-        else:
-            for key in Delta:
-                vt[key] = self.beta_2 * self.momentum2[key] + (1-self.beta_2)*torch.mul(Delta[key], Delta[key])#(Delta[key] **2)
-
-        for key in ssd: 
-            ssd[key] = ssd[key].to("cpu") + self.lr * torch.div(mt[key], torch.sqrt(vt[key]) + self.tau) # sanity check for vt
-            #ssd[key] = ssd[key].to("cpu") + self.lr * mt[key] # sanity check for mt
-
-        if update_server is True:
-            # update server model with the client average
-            self.model.load_state_dict(ssd)
-            self.momentum1 = mt
-            self.momentum2 = vt
-            # return a copy of the aggregated model
-            return self.model.cpu().state_dict() 
-        else:
-            return ssd
-
 
     def aggregate_models(self, client_info, update_server=True):
         """Server aggregation of client models
@@ -588,6 +391,48 @@ class Base_Server:
         self.model.load_state_dict(ssd)
         # return a copy of the aggregated model
         return self.model.cpu().state_dict() 
+    
+    def Multi_Krum(self, client_info, update_server=True, n_malicious = None):
+        """Server aggregation of client models
+
+        Args:
+            client_info (_type_): includes the local models, index, accuracy, num samples
+
+        Returns:
+            _type_: list of new global model, one copy for each thread
+        """
+        # sort clients with respect to index
+        client_info.sort(key=lambda tup: tup["client_index"])
+        # pick only the weights from the clients
+        client_sd = [c["weights"] for c in client_info]
+        num_clients = len(client_sd)
+        if n_malicious is None:
+            f = num_clients // 2
+        else:
+            f = n_malicious
+        k = num_clients - f - 2 
+        # compute fraction of data samples each client has
+        cw = [c["num_samples"] / sum([x["num_samples"] for x in client_info]) for c in client_info]
+        total_samples = sum([x["num_samples"] for x in client_info])
+        # load the previous server model
+        flattened_client_sd = torch.vstack([torch.cat([t.flatten() for t in client_sd[iii].values()]) for iii in range(num_clients)])
+        cdist = torch.cdist(flattened_client_sd, flattened_client_sd, p=2)
+        nbhDist, nbh = torch.topk(cdist, k + 1, largest=False)
+        i_star = torch.argmin(nbhDist.sum(1))
+        to_aggregate = nbh[i_star, :]
+        tot_samples_aggregate = sum([x["num_samples"] for i, x in enumerate(client_info) if i in to_aggregate])
+        ssd = self.model.state_dict()
+        # go through each layer in model and replace with weighted average of client models
+        for key in ssd:
+            ssd[key] = sum([sd[key] * cw[i] * (total_samples/tot_samples_aggregate) for i, sd in enumerate(client_sd) if i in to_aggregate])
+
+        if update_server is True:
+            # update server model with the client average
+            self.model.load_state_dict(ssd)
+            # return a copy of the aggregated model
+            return self.model.cpu().state_dict() 
+        else:
+            return ssd
         
 
     def evaluate(self, test_data=False, eval_model=None):

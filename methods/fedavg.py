@@ -9,12 +9,11 @@ from models.logistic_regression import LogisticRegression
 from methods.FocalLoss import BaselineLoss
 
 class Client(Base_Client):
-    def __init__(self, client_dict, args):
-        super().__init__(client_dict, args)
     
+    def __init__(self, client_dict, args):
+        
+        super().__init__(client_dict, args)
         self.model = self.model_type(self.num_classes).to(self.device)
-
-        #self.criterion = torch.nn.CrossEntropyLoss().to(self.device)
         self.optimizer = torch.optim.SGD(
             self.model.parameters(),
             lr=args.lr,
@@ -31,19 +30,12 @@ class Client(Base_Client):
                 assert False, "Wrong dataset and model combination!!!"
         else:
             self.criterion = torch.nn.CrossEntropyLoss().to(self.device)
-        #self.criterion = BaselineLoss().to(self.device)
-        
-        # self.optimizer = torch.optim.Adam(
-        #     self.model.parameters(),
-        #     lr=args.lr,
-        #     weight_decay=args.wd,
-        # )
-
 
 class Server(Base_Server):
+    
     def __init__(self, server_dict, args):
+        
         super().__init__(server_dict, args)
-        # self.model = self.model_type(self.num_classes, args.data_dir)
         self.model = self.model_type(self.num_classes)
         if hasattr(self.model, 'base_model') and self.model.base_model._get_name() == 'EfficientNet':
             if self.num_classes == 8:
@@ -54,4 +46,3 @@ class Server(Base_Server):
                 assert False, "Wrong dataset and model combination!!!"
         else:
             self.criterion = torch.nn.CrossEntropyLoss().to(self.device)
-

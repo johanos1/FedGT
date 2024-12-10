@@ -1,15 +1,15 @@
 # Note that several of the parameters are given as lists to enable sweeping over parameters.
-# Check the Loss!!!!!
+
 [Sim]
 n_threads = 2
 n_clients = 15
-# 0: no defence (keep the malicous nodes), 1: oracle (remove all malicious nodes), 2: group testing, 3: noiseless group testing, 4: GM_aggregation
+# 0: No defence, 1: oracle, 2: FedGT - nm, 3: noiseless FedGT (not supported) 4:GM, 5:MKrum, 6: FedGT - Delta
 MODE_list = [2] 
-# 0: permutation attack, 1: random labels, 2: 1->7 label flip, 3: active attack
-n_malicious_list = [5]
-attack_list = [3]
-total_MC_it = 1
-PCA_simulation = false
+# 0: permutation attack, 1: random labels, 2: 1->7 label flip, 3:active attack (untargeted), 4: active attack (targeted)
+n_malicious_list = [1, 2, 3, 4, 5] # 1,2,3,4,5
+attack_list = [2]
+total_MC_it = 3
+QGT = true
 
 [PCA]
 no_comp = 4
@@ -32,25 +32,14 @@ communication_rounds = 40
 epochs_list = [1]
 batch_size_list = [64]
 
-
 [GT]
 n_tests = 8
 group_test_round = 5
-test_threshold = 0.96               # GT threshold
 crossover_probability_list = [0.05] 
-manual_params = false
 prevalence_list = [0.1]
 P_FA = 0.05
 P_MD = 0.05
-# Decoding thresholds
-BCJR_min_threshold = 0.2
-BCJR_max_threshold = 0.21
-BCJR_step_threshold = 0.1
-DELTA = -0.2
 
 [Test]
-ss_thres = 0.6
-
-[Oracle]
-kick_out_clients = false
-which_ones = []
+ss_thres = 0.0
+beta = 0.5 # 0.25, 0.5, 0.75

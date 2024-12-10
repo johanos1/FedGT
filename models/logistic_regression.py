@@ -1,7 +1,6 @@
 import torch
 from torch.nn import functional as F
 
-
 class LogisticRegression(torch.nn.Module):
     def __init__(self, input_dim, output_dim):
         super(LogisticRegression, self).__init__()
@@ -13,7 +12,6 @@ class LogisticRegression(torch.nn.Module):
         x = x.view(x.size(0), -1)
         outputs = self.linear(x)
         return outputs
-
 
 def logistic_regression(class_num, datadir: str = "data/mnist"):
     # Build a logistic regression model

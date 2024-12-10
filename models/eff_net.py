@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+#import sys
+#sys.path.append('/nas/lnt/ga53rum/packages/')
 from efficientnet_lite_pytorch import EfficientNet
 from efficientnet_lite0_pytorch_model import EfficientnetLite0ModelFile
 #from efficientnet_lite2_pytorch_model import EfficientnetLite2ModelFile
@@ -36,12 +38,13 @@ class Baseline(nn.Module):
         return out
 
 def efficient_net_lite(num_classes, pretrained = True, arch_name="efficientnet-lite2"):
+    
     weights_path = None
     if pretrained:
         weights_path = EfficientnetLite0ModelFile.get_model_file_path()
     model = Baseline(num_classes, pretrained, arch_name, weights_path)
     
-        # Freeze all layers
+    # Freeze all layers -- > Fine Tuning
     for param in model.parameters():
         param.requires_grad = False
 
@@ -53,14 +56,6 @@ def efficient_net_lite(num_classes, pretrained = True, arch_name="efficientnet-l
 
 
 def efficient_net(num_classes, pretrained = True, arch_name="efficientnet_b0"):
-    model = Baseline(num_classes, pretrained, arch_name)
-     
-    # # Freeze all layers
-    # for param in model.parameters():
-    #     param.requires_grad = False
-
-    # # Unfreeze the final fully connected layer
-    # for param in model.base_model.classifier.parameters():
-    #     param.requires_grad = True
-        
+    
+    model = Baseline(num_classes, pretrained, arch_name)        
     return model
