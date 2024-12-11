@@ -397,7 +397,7 @@ if __name__ == "__main__":
                         # if oracle, only keep benign clients
                         clients_to_aggregate = []
                         for i in range(cfg.Sim.n_clients):
-                            if i not in malicious_clients:
+                            if sampled_clients_indices[i] not in malicious_clients: #Check this for cross-silo!!!!
                                 clients_to_aggregate.append(client_outputs[i])
                     else:
                         # -----------------------------------------
