@@ -10,9 +10,10 @@ n_clients_total = 100
 # 2: FedGT - nm, 
 # 3: noiseless FedGT (not supported) 
 # 4: GM, 
-# 5:MKrum, 
+# 5: MKrum, 
 # 6: FedGT - Delta
-MODE_list = [6,0,1,4]   
+# 7: FedQGT
+MODE_list = [7]   
 
 # 0: permutation attack, 
 # 1: random labels, 
