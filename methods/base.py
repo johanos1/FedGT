@@ -10,6 +10,14 @@ from collections import OrderedDict
 import numpy as np
 import copy
 
+PERMUTATION_ATTACK = 0
+RANDOM_LABELS_ATTACK = 1
+LABEL_FLIP_ATTACK = 2
+ACTIVE_DATA_POISONING_ATTACK = 3
+ACTIVE_DATA_POISONING_TARGETED_ATTACK = 4
+DATA_POISON_AND_MODEL_POISON_ATTACK = 6
+DATA_POISON_AND_MODEL_POISON_TARGETED_ATTACK = 7
+
 def generate_histogram(data, num_classes, client_idx):
     histogram = [0] * num_classes  # Initialize histogram with zeros for each class
 
@@ -38,6 +46,7 @@ class Base_Client:
         self.epochs = args.epochs
         self.batch_size = args.batch_size
         self.round = 0
+        self.attack = args.attack
         self.active_poisoning = False
 
     def load_model(self, server_model):
@@ -63,30 +72,29 @@ class Base_Client:
         self.model.train()
         epoch_loss = []
         
+        attacks_with_poisoned_data = [ACTIVE_DATA_POISONING_ATTACK, ACTIVE_DATA_POISONING_TARGETED_ATTACK]
+        attacks_with_poisoned_data_after_training = [DATA_POISON_AND_MODEL_POISON_ATTACK,DATA_POISON_AND_MODEL_POISON_TARGETED_ATTACK]
         
-        if self.active_poisoning:
+        # we need to store the starting point for training on the poisoned data
+        if self.attack in attacks_with_poisoned_data_after_training:
+            poisoned_model = copy.deepcopy(self.model)
+            
+        if self.active_poisoning and self.attack in attacks_with_poisoned_data:
             train_dataloader = self.poisoned_train_dataloader
             if self.train_dataloader.dataset.is_isic:
                 src = 0
             elif self.train_dataloader.dataset.is_mnist:
                 src = 1
-            else:
+            else: #cifar10
                 src = 7
         else:
             train_dataloader = self.train_dataloader
-        
-        # if isinstance(train_dataloader.dataset.target, np.ndarray):
-        #     print(f"Client {self.client_index}, bincount: {torch.bincount(torch.from_numpy(train_dataloader.dataset.target))}")
-        # elif isinstance(train_dataloader.dataset.target, List):
-        #     print(f"Client {self.client_index}, bincount: {torch.bincount(torch.tensor(train_dataloader.dataset.target))}")
-        # else:
-        #     print(f"Client {self.client_index}, bincount: {torch.bincount(train_dataloader.dataset.target)}")
-        
+
         for epoch in range(self.epochs):
             batch_loss = []
             src_cnt = 0
             for batch_idx, (images, labels) in enumerate(train_dataloader):
-                if self.active_poisoning:
+                if self.attack in {ACTIVE_DATA_POISONING_TARGETED_ATTACK, DATA_POISON_AND_MODEL_POISON_TARGETED_ATTACK}:
                     src_cnt += sum(labels==src).item()
                 
                 images, labels = images.to(self.device), labels.to(self.device)
@@ -105,8 +113,37 @@ class Base_Client:
                         sum(epoch_loss) / len(epoch_loss),
                     )
                 )
-        weights = self.model.cpu().state_dict()
         
+        if self.active_poisoning and self.attack in attacks_with_poisoned_data_after_training:
+            train_dataloader = self.poisoned_train_dataloader
+            
+            def model_distance_regularizer(model_current, model_target, lambda_reg=1e-4):
+                reg_loss = 0.0
+                for param_current, param_target in zip(model_current.parameters(), model_target.parameters()):
+                    reg_loss += torch.nn.functional.mse_loss(param_current, param_target, reduction='sum')
+                return lambda_reg * reg_loss
+            
+            self.model.to(self.device)
+            self.model.eval()
+            poisoned_model.to(self.device)
+            poisoned_model.train()
+            for epoch in range(self.epochs):
+                batch_loss = []
+                for batch_idx, (images, labels) in enumerate(train_dataloader):      
+                    images, labels = images.to(self.device), labels.to(self.device)
+                    self.optimizer.zero_grad()
+                    log_probs = poisoned_model(images)
+                    loss = self.criterion(log_probs, labels)
+                    reg_loss = model_distance_regularizer(poisoned_model, self.model, lambda_reg=1e-4)
+                    total_loss = loss + reg_loss
+                    total_loss.backward()
+                    self.optimizer.step()
+            self.model = poisoned_model
+        
+            
+        
+        self.model.to("cpu")
+        weights = self.model.state_dict()
         self.active_poisoning = False
         
         return weights, src_cnt

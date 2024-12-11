@@ -3,13 +3,30 @@
 [Sim]
 n_threads = 15 # 15
 n_clients = 15 # 15
-# 0: No defence, 1: oracle, 2: FedGT - nm, 3: noiseless FedGT (not supported) 4:GM, 5:MKrum, 6: FedGT - Delta
-MODE_list = [2]   
-# 0: permutation attack, 1: random labels, 2: 1->7 label flip, 3:active attack (untargeted), 4: active attack (targeted)
-attack_list = [2]
-total_MC_it = 5
-n_malicious_list =  [1, 2, 3, 4, 5] #1,2,3,4,5
-QGT = true
+n_clients_total = 100
+
+# 0: No defence, 
+# 1: oracle, 
+# 2: FedGT - nm, 
+# 3: noiseless FedGT (not supported) 
+# 4: GM, 
+# 5:MKrum, 
+# 6: FedGT - Delta
+MODE_list = [6,0,1,4]   
+
+# 0: permutation attack, 
+# 1: random labels, 
+# 2: 1->7 label flip, 
+# 3: active data-poisoning attack (untargeted), 
+# 4: active data-poisoning attack (targeted)
+# 5: 
+# 6: data-poison and model-poison attack (untargeted)
+# 7: data-poison and model-poison attack (targeted)
+attack_list = [3,6]
+
+total_MC_it = 1
+n_malicious_list =  [10,20,30]
+
 
 [PCA]
 no_comp = 4
@@ -34,6 +51,7 @@ batch_size_list = [128]
 
 
 [GT]
+QGT = true
 n_tests = 8 #12
 group_test_round = 5
 crossover_probability_list = [0.05]

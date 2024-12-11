@@ -215,7 +215,7 @@ class Group_Test:
         d_scores = -1 * np.ones(l_cls)
         all_labels = np.empty((l_cls, self.n_tests))
         for idx_clst, clst in enumerate(poss_clusters):
-            kmeans = KMeans(n_clusters=clst, random_state=0)
+            kmeans = KMeans(n_clusters=clst, n_init=10, random_state=0)
             kmeans.fit(X)
             labels_data = kmeans.labels_
             all_labels[idx_clst, :] = labels_data
