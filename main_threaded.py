@@ -75,16 +75,10 @@ if __name__ == "__main__":
     cfg_path = "./cfg_files/cfg_cifar.toml"
     with open(cfg_path, "r") as file:
         cfg = DotMap(toml.load(file))
-
-    flag_QGT = cfg.GT.QGT
-    if flag_QGT:
-        gt = Quantitative_Group_Test(cfg.Sim.n_clients, cfg.GT.n_tests, prevalence = 0)
-        parity_check_matrix, _, _, _, _ = gt._get_test_matrix()
-        del gt
-    else:
-        gt = Group_Test(cfg.Sim.n_clients, cfg.GT.n_tests)
-        parity_check_matrix = gt._get_test_matrix()
-        del gt
+    ### We do not need the flag here!!!
+    gt = Group_Test(cfg.Sim.n_clients, cfg.GT.n_tests)
+    parity_check_matrix = gt._get_test_matrix()
+    del gt
 
     sim_result = {}
 
@@ -140,6 +134,7 @@ if __name__ == "__main__":
         GM_aggregation = True if MODE == 4 else False
         Multi_Krum = True if MODE == 5 else False
         flag_np = True if MODE == 6 else False
+        flag_QGT = True if MODE == 7 else False
 
         # prepare to store results
         sim_result["epochs"] = epochs
@@ -199,7 +194,7 @@ if __name__ == "__main__":
                 malicious_clients = pool_isic_mal_cl[monte_carlo_iterr ,:n_malicious].tolist()
             defective = np.zeros((1, n_clients_total), dtype=np.uint8)
             defective[:, malicious_clients] = 1 
-            # if cross-device, make sure at least one group is benign
+            # if cross-silo, make sure at least one group is benign
             if cross_silo_flag:
                 while(True):
                     syndy = np.matmul(defective, parity_check_matrix.transpose())
@@ -318,7 +313,7 @@ if __name__ == "__main__":
             # -----------------------------------------
             #          Make Group Test Object
             # -----------------------------------------
-            if not (oracle or no_defence or GM_aggregation):
+            if not (oracle or no_defence or GM_aggregation or Multi_Krum):
                 P_FA_test = 1e-6 if noiseless_gt else cfg.GT.P_FA
                 P_MD_test = 1e-6 if noiseless_gt else cfg.GT.P_MD
                 prevalence = n_malicious / cfg.Sim.n_clients 
@@ -523,8 +518,6 @@ if __name__ == "__main__":
         checkpoint_dict["d_scores"] = checkpoint_dict["d_scores"].tolist()
 
         prefix_0 = "./results/" #active_attacks
-        if flag_QGT == True:
-            prefix_0 = prefix_0 + "QGT_"
         if "mnist" in cfg.Data.data_dir:
             prefix = prefix_0 + "MNIST_"
         elif "cifar" in cfg.Data.data_dir:
