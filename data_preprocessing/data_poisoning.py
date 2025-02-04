@@ -33,7 +33,7 @@ def random_labels(ds: data.Dataset) -> data.Dataset:
     """
     n_labels = ds.target.shape[0]
     if ds.is_isic:
-            num_classes = 8
+        num_classes = 8
     else:
         num_classes = 10
     ds.target = torch.from_numpy(np.random.randint(num_classes, size=(n_labels,)))

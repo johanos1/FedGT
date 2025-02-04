@@ -3,17 +3,12 @@ Federated Dataset Loading and Partitioning
 Code based on https://github.com/FedML-AI/FedML
 """
 
-import sys
-sys.path.append('/nas/lnt/ga53rum/packages/')
 import logging
-
 import numpy as np
 import torchvision.transforms as transforms
 import random
 import albumentations
-
 from data_preprocessing.datasets import Data_Manager
-
 
 logging.basicConfig()
 logger = logging.getLogger()
@@ -162,7 +157,7 @@ def partition_data(data_obj, partition, n_nets, alpha):
     
 def get_data_object(datadir, val_size, batch_size):
     train_transform, val_test_transform = _data_transforms(datadir)
-    test_bs_marvin = 1
+    test_bs = 1
     dl_obj = Data_Manager(
         datadir,
         None,
@@ -170,7 +165,7 @@ def get_data_object(datadir, val_size, batch_size):
         val_test_transform,
         val_size,
         batch_size,
-        test_bs=test_bs_marvin, #batch_size,
+        test_bs=test_bs, #batch_size,
     )
 
     return dl_obj

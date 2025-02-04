@@ -22,7 +22,6 @@ IMG_EXTENSIONS = (
     ".webp",
 )
 
-
 class Data_Manager:
     def __init__(
         self,
@@ -122,7 +121,6 @@ class Data_Manager:
         for j in range(n_groups):
             x_grouped[j] = [i for i, item in enumerate(x_index_list) if item in x_grouped[j]]
         return x_grouped
-        
     
     def get_client_dl(self, dataidxs, attacks=None):
         client_ds = Custom_Dataset(

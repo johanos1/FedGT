@@ -1,5 +1,4 @@
 import numpy as np
-import logging
 import ctypes
 import torch.nn
 from sklearn.decomposition import PCA
@@ -157,11 +156,11 @@ class Group_Test:
         return dull_index
     
     def perform_gt(self, test_values, Neyman_person=False):
-
+        ## The look-up tables are hard-coded for the choice of parity-check matrices supported
         tests = np.zeros((1, self.n_tests), dtype=np.uint8)
         tests[0, :] = test_values
         if self.n_clients == 15:
-            look_up_nm = [5, 5, 5, 4, 3, 3, 2, 1, 0] #look_up_nm = [0, 1, 2, 3, 3, 4, 5, 5, 5]
+            look_up_nm = [5, 5, 5, 4, 3, 3, 2, 1, 0] 
         elif self.n_clients == 30:
             look_up_nm = [8, 8, 8, 8, 7, 6, 5, 5, 4, 3, 2, 1, 0] # Make this full!!!!
         nm_est = look_up_nm[np.sum(tests[0, :] == 0)]
@@ -173,8 +172,9 @@ class Group_Test:
             td = 0.0
         else:
             if self.n_clients == 15:
+                ## The look-up tables are hard-coded for the best Deltas for 3 choices of beta
                 if self.beta == 0.5 or self.beta == None:
-                    DELTA_look_up = [-np.log((1 - prev_est) / prev_est), -1, -1.2, -0.5, 0.0, 0.0] # for nm = 0 (td =0.0), 1, 2, 3, 4, 5
+                    DELTA_look_up = [-np.log((1 - prev_est) / prev_est), -1, -1.2, -0.5, 0.0, 0.0] 
                 elif self.beta == 0.25:
                     DELTA_look_up = [-np.log((1 - prev_est) / prev_est), -1, -1.3, -1.1, -0.9, -1.0] # for nm = 0 (td =0.0), 1, 2, 3, 4, 5
                 elif self.beta == 0.75:
@@ -185,17 +185,17 @@ class Group_Test:
             td = np.log((1 - prev_est) / prev_est) + DELTA
         self.fun(
             self.parity_check_matrix,
-            LLRinput, #self.LLRi,
+            LLRinput, 
             tests,
             self.ChannelMatrix,
-            td, #self.threshold_dec,
+            td, 
             self.n_clients,
             self.n_tests,
             self.LLRO,
             self.DEC,
         )
         if Neyman_person == False:
-            idx_sort = np.argsort(self.LLRO) #check if DEC is always 0 
+            idx_sort = np.argsort(self.LLRO) 
             if nm_est != 0:
                 self.DEC[0, idx_sort[:, :nm_est]] = 1
                 identical_soft = np.where(self.LLRO[0,:] == self.LLRO[0, idx_sort][0, nm_est-1])[0]
@@ -236,8 +236,8 @@ class Group_Test:
         temp_array = -1 * np.ones((tot_clust, 3))
         for key, items in indices_dict.items():
             temp_array[key, 0] = len(items)
-            temp_array[key, 1] = np.mean(group_acc[items]) if group_acc[items].size != 0 else -1 # Check this plz
-            temp_array[key, 2] = np.mean(group_PCA[items]) if group_PCA[items].size != 0 else -1 # Check this as well
+            temp_array[key, 1] = np.mean(group_acc[items]) if group_acc[items].size != 0 else -1 
+            temp_array[key, 2] = np.mean(group_PCA[items]) if group_PCA[items].size != 0 else -1 
         temp_array = temp_array.transpose()
         tests = np.ones(self.n_tests, dtype=np.uint8)
         if np.sum(temp_array[1, :] == np.max(temp_array[1, :])) == 1:

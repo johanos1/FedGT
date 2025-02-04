@@ -36,7 +36,7 @@ no_comp = 4
 val_size = 100
 partition_method = "homo"  # homo, hetero
 data_dir = "data/cifar10"
-alpha_list = [1e4] # 1e4:default, do not change!!! [1e4] 0.4, 0.6, 0.8, 1.0.
+alpha_list = [1e4] # 1e4:default [0.4, 0.6, 0.8, 1.0]
 n_classes = 10
 
 [ML]

@@ -123,7 +123,6 @@ def download_isic():
         print("You already have downloaded the dataset. Aborting.")
     else:
         data_directory = dict["dataset_path"]
-
         
         dest_file_1 = os.path.join(data_directory, "ISIC_2019_Training_Input.zip")
         dest_file_2 = os.path.join(data_directory, "ISIC_2019_Training_Metadata.csv")

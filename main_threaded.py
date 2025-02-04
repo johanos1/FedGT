@@ -22,9 +22,6 @@ from models.resnet import resnet18
 from models.eff_net import efficient_net
 from defence.group_test import Group_Test
 from defence.quantitative_gt import Quantitative_Group_Test
-from defence.scoring import QI_Scoring
-import sys
-sys.path.append('/nas/lnt/ga53rum/packages/')
 import toml
 from dotmap import DotMap
 
@@ -32,10 +29,10 @@ import torch.multiprocessing as mp
 from torch.multiprocessing import set_start_method
 
 
-# 0: permutation attack, 
-# 1: random labels, 
-# 2: 1->7 label flip, 
-# 3: active data-poisoning attack (untargeted), 
+# 0: permutation attack,
+# 1: random labels,
+# 2: 1->7 label flip,
+# 3: active data-poisoning attack (untargeted)
 # 4: active data-poisoning attack (targeted)
 # 5: gradient ascent attack
 # 6: data-poison and model-poison attack
@@ -58,7 +55,6 @@ def update_global_model(clients, server_model):
     for client in clients:
         client.load_model(server_model)
 
-
 # Setup Functions
 def set_random_seed(seed=1):
     random.seed(seed)
@@ -75,11 +71,9 @@ if __name__ == "__main__":
     cfg_path = "./cfg_files/cfg_cifar.toml"
     with open(cfg_path, "r") as file:
         cfg = DotMap(toml.load(file))
-    ### We do not need the flag here!!!
     gt = Group_Test(cfg.Sim.n_clients, cfg.GT.n_tests)
     parity_check_matrix = gt._get_test_matrix()
     del gt
-
     sim_result = {}
 
     # if no key is given, make sure we are using all clients
@@ -120,12 +114,6 @@ if __name__ == "__main__":
                 src = 0
                 target = 1
         
-        if "isic" in cfg.Data.data_dir and cfg.Sim.total_MC_it == 3:
-            if ATTACK == 4:
-                pool_isic_mal_cl = np.array([[9, 6, 8, 1, 14], [3, 9, 6, 0, 8], [1, 6, 8, 2, 10]], dtype=np.uint8) 
-            else:
-                pool_isic_mal_cl = np.array([[9, 6, 8, 1, 14], [3, 9, 6, 0, 8], [1, 6, 8, 9, 14]], dtype=np.uint8)
-
         no_PCA_components = cfg.PCA.no_comp        
 
         noiseless_gt = True if MODE == 3 else False
@@ -190,8 +178,6 @@ if __name__ == "__main__":
             # Assign n_malicious clients
             malicious_clients_pool = np.random.permutation(n_clients_total)
             malicious_clients = malicious_clients_pool[:n_malicious].tolist()
-            if "isic" in cfg.Data.data_dir:
-                malicious_clients = pool_isic_mal_cl[monte_carlo_iterr ,:n_malicious].tolist()
             defective = np.zeros((1, n_clients_total), dtype=np.uint8)
             defective[:, malicious_clients] = 1 
             # if cross-silo, make sure at least one group is benign
@@ -384,10 +370,6 @@ if __name__ == "__main__":
                         for i in malicious_clients:
                             src_cnt = client_outputs[i]["src_cnt"]
                             print(f"client {i} used {src_cnt} samples from src during training")
-
-                    if len(client_outputs) != cfg.Sim.n_clients or len(set([client_outputs[i]["client_index"] for i in range(len(client_outputs))])) != cfg.Sim.n_clients:
-                        print("No PASS!")
-                        assert False, "Error with parallel computing!!!"
 
                     if no_defence or Multi_Krum or GM_aggregation:
                         # if no defence, MKrum or GM keep all clients

@@ -138,9 +138,7 @@ class Base_Client:
                     total_loss = loss + reg_loss
                     total_loss.backward()
                     self.optimizer.step()
-            self.model = poisoned_model
-        
-            
+            self.model = poisoned_model            
         
         self.model.to("cpu")
         weights = self.model.state_dict()
@@ -169,12 +167,9 @@ class Base_Client:
                 x = x.to(self.device)
                 target = target.to(self.device)
                 pred = self.model(x)
-                # loss = self.criterion(pred, target)
                 _, predicted = torch.max(pred, 1)
                 correct = predicted.eq(target).sum()
-
                 test_correct += correct.item()
-                # test_loss += loss.item() * target.size(0)
                 test_sample_number += target.size(0)
             acc = (test_correct / test_sample_number) * 100
             logging.info("************* Client {} Acc = {:.2f} **************".format(self.client_index, acc))
@@ -189,7 +184,6 @@ class Base_Client:
         # store logits for the target label
         logits = []
         with torch.no_grad():
-            
             for batch_idx, (x, target) in enumerate(self.train_dataloader):
                 x = x.to(self.device)
                 target = target.to(self.device)
@@ -201,7 +195,6 @@ class Base_Client:
             classified_labels = torch.argmax(logits, dim=1)
             true_labels = self.train_dataloader.dataset.target[0:classified_labels.shape[0]]
             n_poison_samples = int(fraction * logits.shape[0])
-            #poisoning_labels = torch.argmin(logits, dim=1)[0:n_poison_samples]
             _, poisoning_labels = torch.topk(logits, k=2, dim=1)
             for i in range(n_poison_samples):
                 # correct classification
@@ -355,7 +348,7 @@ class Base_Server:
         elif self.aggregation_method == "MKrum":
             server_outputs = self.Multi_Krum(received_info, update_server=True, n_malicious=self.n_malicious)
         else:
-            assert False, "The aggregation method is not supported yet!!!"
+            assert False, "The aggregation method is not supported!!!"
 
         # check accuracy on test set
         acc, cf_matrix, class_prec, class_recall, class_f1 = self.evaluate(test_data=True)

@@ -34,7 +34,7 @@ class Quantitative_Group_Test:
         assert self.n_clients == self.parity_check_matrix.shape[1], "Wrong no of cols in H!"
 
         # Set up the decoding algorithm based on C-code
-        lib = ctypes.cdll.LoadLibrary("./src/C_code/QGT/LL_augmented_BP_decoder_correct.so")
+        lib = ctypes.cdll.LoadLibrary("./src/C_code/QGT/FedQGT_decoder.so")
         p_ui8_c = ndpointer(ctypes.c_uint8, flags="C_CONTIGUOUS")
         p_i16_c = ndpointer(ctypes.c_int16, flags="C_CONTIGUOUS")
         p_d_c = ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")
@@ -177,7 +177,7 @@ class Quantitative_Group_Test:
         sorted_idxs = np.arange(tot_clust)[sorted_PCA]
         if is_monotonic_array(sorted_test_ready[1, :]):
             ind_acc_sort = np.argsort(sorted_test_ready[1,:])[::-1] # either 0,1,...,tot_clust-1 or reversed
-        else: #if not monotonic, just check the polar opposites !!!
+        else: #if not monotonic, just check the polar opposites 
             if sorted_test_ready[1, 0] > sorted_test_ready[1, -1]:
                 ind_acc_sort = np.arange(tot_clust)
             elif sorted_test_ready[1, 0] < sorted_test_ready[1, -1]:
@@ -219,7 +219,6 @@ class Quantitative_Group_Test:
                 class_f1[i, :],
                 loss_per_label[i, :],
             ) = server.evaluate(test_data=False, eval_model=model)
-            ### Check this for non-ISIC datasets ### 
             true_positives = np.diag(cf_matrix)
             total_actuals = np.sum(cf_matrix, axis=1)
             recalls = true_positives / total_actuals
@@ -227,7 +226,7 @@ class Quantitative_Group_Test:
         return group_acc, class_precision, class_recall, class_f1, loss_per_label
 
     def get_pca_components(self, client_models, server, no_comp = 4, num_classes = 10):
-        # DEBUG
+        # 
         sim_obj = torch.nn.CosineSimilarity(dim=1)
         pca = PCA(n_components=no_comp, svd_solver='full')
 

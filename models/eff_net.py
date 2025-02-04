@@ -1,7 +1,5 @@
 import torch
 import torch.nn as nn
-#import sys
-#sys.path.append('/nas/lnt/ga53rum/packages/')
 from efficientnet_lite_pytorch import EfficientNet
 from efficientnet_lite0_pytorch_model import EfficientnetLite0ModelFile
 #from efficientnet_lite2_pytorch_model import EfficientnetLite2ModelFile

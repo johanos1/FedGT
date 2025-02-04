@@ -1,7 +1,8 @@
 /*
  * BP decoder for Quantitative Group testing with
  * noiseless tests
- *
+ * Xhemrishi, Östman, Graell i Amat, "Soft-Decision Decoding for LDPC Code-Based Quantitative Group Testing",
+ * 14th International ITG Conference on Systems, Communications and Coding (SCC)
  * /
 /* C Libraries */
 
@@ -16,7 +17,7 @@
 #define MAXS_H_NUMSAMPLES 20000
 
 /* Look up table */
-//double jaclog_vals[MAXS_H_NUMSAMPLES];
+// double jaclog_vals[MAXS_H_NUMSAMPLES];
 
 double jacLog(double d)
 {
@@ -96,7 +97,6 @@ void initializematrix(const int16_t *H, uint64_t nrows, uint64_t ncols, bool var
             Hmat[i][j] = H[j + i * ncols];
         }
     }
-    // printf("U gjeneru1!\n");
     if (variable_nodes)
     {
         for (size_t i = 0; i < nrows; i++)
@@ -129,7 +129,7 @@ double maxstar(double x, double y)
     if (x == -INFINITY || y == -INFINITY) // i >= MAXS_H_NUMSAMPLES ||
         return (x > y ? x : y);
     else
-        return (x > y ? x : y) + jacLog(fabs(x - y)); // jaclog_vals[i];
+        return (x > y ? x : y) + jacLog(fabs(x - y));
 }
 
 double calculate_sum_product(double *v1, double *v2, int n, int t)
@@ -432,13 +432,12 @@ void decode(uint8_t *test_outcome, uint8_t *DEC, double *prevalence, uint16_t ma
                     {
                         temp_0 += L_cv[r][N][0];
                         temp_1 += L_cv[r][N][1];
-                        // break; // neighbour should only be once there!
                     }
                 }
             }
             DEC[i] = (temp_1 > temp_0) ? 1 : 0;
         }
-        // check, whether the infered vector satisfies the tests.. (maybe for noiseless only)
+        // check, whether the infered vector satisfies the noiseless tests..
         bool isCodeword = true;
         for (size_t i = 0; i < t; i++)
         {
@@ -452,7 +451,7 @@ void decode(uint8_t *test_outcome, uint8_t *DEC, double *prevalence, uint16_t ma
             }
         }
         if (isCodeword)
-            break; //return
+            break; // return
     }
     free3d_d(L_cv);
     free3d_d(L_vc);
@@ -476,10 +475,10 @@ void BP_decoder(const uint16_t n_input, const uint16_t t_input, const uint8_t dv
     initializematrix(cn_input, t, max_dc, 0);
     cn_deg = malloc(t * sizeof(uint8_t));
     for (size_t i = 0; i < t; i++)
-        cn_deg[i] = cn_deg_input[i]; // works for regular only
+        cn_deg[i] = cn_deg_input[i]; //
     vn_deg = malloc(n * sizeof(uint8_t));
     for (size_t i = 0; i < n; i++)
-        vn_deg[i] = vn_deg_input[i]; // works for regular only
+        vn_deg[i] = vn_deg_input[i]; //
     uint8_t *test_outcome = malloc(t * sizeof(uint8_t));
     for (size_t i = 0; i < t; i++)
         test_outcome[i] = test_outcome_input[i];
@@ -487,10 +486,6 @@ void BP_decoder(const uint16_t n_input, const uint16_t t_input, const uint8_t dv
     for (size_t i = 0; i < n; i++)
         prevalence[i] = prevalence_input[i];
     uint16_t maxIter = max_Iter_input;
-    /*for (size_t i = 0; i < MAXS_H_NUMSAMPLES; i++)
-    {
-        jaclog_vals[i] = jacLog(i * MAXS_H_INTERVAL);
-    }*/
     decode(test_outcome, DEC, prevalence, maxIter);
     free2d_si16(vn);
     free2d_si16(cn);
