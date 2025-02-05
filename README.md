@@ -1,6 +1,6 @@
 # FedGT
 
-This code is used to obtain the results from our paper, FedGT: Identification of Malicious Clients in Federated Learning with Secure Aggregation, Marvin Xhemrishi, Johan Östman, Antonia Wachter-Zeh, and Alexandre Graell i Amat, accepted for publication at IEEE Transactions on Information Theory. 
+This code is used to obtain the results from our paper, FedGT: Identification of Malicious Clients in Federated Learning with Secure Aggregation, Marvin Xhemrishi, Johan Östman, Antonia Wachter-Zeh, and Alexandre Graell i Amat, accepted for publication at IEEE Transactions on Forensics and Information Security. 
 
 ## How to use it
 
