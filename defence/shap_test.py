@@ -1,4 +1,5 @@
 import numpy as np
+import math
 from itertools import combinations
 
 
@@ -30,7 +31,7 @@ class SHAP_Test:
 
                 marginal_contribution = group_acc[r][subset_index[0][0]] - group_acc[r][subset_without_i_index[0][0]]
                 subset_size = np.sum(subset) - 1
-                weight = (np.math.factorial(subset_size) * np.math.factorial(self.n_clients - subset_size - 1)) / np.math.factorial(self.n_clients)
+                weight = (math.factorial(subset_size) * math.factorial(self.n_clients - subset_size - 1)) / math.factorial(self.n_clients)
                 tmp += weight * marginal_contribution
 
             scores[i] = tmp
