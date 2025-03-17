@@ -2,43 +2,51 @@ import numpy as np
 
 
 class QI_Test():
-    def __init__(self, n_clients, n_tests, n_classes, threshold, groups4test):
+    def __init__(self, n_clients, n_tests, n_classes, threshold, groups4test, past_groups4test=None):
 
         self.n_clients = n_clients
         self.n_tests = n_tests
         self.n_classes = n_classes
         self.threshold = threshold
-        self.groups4test = groups4test
-        assert self.n_tests == self.groups4test.shape[0], "Wrong no of rows in H!"
-        assert self.n_clients == self.groups4test.shape[1], "Wrong no of cols in H!"
+        self.groups4test_curr = groups4test
+        if past_groups4test is not None:
+            self.groups4test_past = past_groups4test
+        else:
+            self.groups4test_curr = groups4test
+        assert self.n_tests == self.groups4test_curr.shape[0], "Wrong no of rows in H!"
+        assert self.n_clients == self.groups4test_curr.shape[1], "Wrong no of cols in H!"
 
-    def scoring(self, norm, scores, badgroup, goodgroup=None):
+    def scoring(self, norm, scores, badgroup, goodgroup=None, past=None):
         for u in range(self.n_clients):
-            if self.groups4test[badgroup][u]:
+            if self.groups4test_curr[badgroup][u]:
                 scores[u] -= 1 / norm[u]
             if goodgroup is not None:
-                if self.groups4test[goodgroup][u]:
-                    scores[u] += 1 / norm[u]
+                if past is not None:
+                    if self.groups4test_past[goodgroup][u]:
+                        scores[u] += 1 / norm[u]
+                else:
+                    if self.groups4test_curr[goodgroup][u]:
+                        scores[u] += 1 / norm[u]
         return scores
 
     def perform_QI_test_inround(self, group_acc, r):
-        normalize = np.sum(self.groups4test, 0)
+        normalize = np.sum(self.groups4test_curr, 0)
         scores = np.zeros(self.n_clients)
         for j in range(group_acc.shape[1]):
             for k in range(j+1, group_acc.shape[1]):
                 if group_acc[r][j] < group_acc[r][k] - self.threshold:
                     self.scoring(normalize, scores, j, k)
-                if group_acc[r][j] > group_acc[r][k] + self.threshold:
-                    self.scoring(normalize, scores, k, j)
         return scores
 
     def perform_QI_test_acrossround(self, group_imp, r):
-        normalize = np.sum(self.groups4test, 0)
+        normalize = np.sum(self.groups4test_curr, 0) + np.sum(self.groups4test_past, 0)
         scores = np.zeros(self.n_clients)
         for j in range(group_imp.shape[1]):
             for k in range(group_imp.shape[1]):
+                print(group_imp[r-1][j], group_imp[r][k])
                 if group_imp[r-1][j] < group_imp[r][k] - self.threshold:
-                    self.scoring(normalize, scores, j, k)
+                    self.scoring(normalize, scores, j, k, 'past')
+                print(scores[3])
             if group_imp[r][j] < 0 - self.threshold:  # not checking the first test-round
                 self.scoring(normalize, scores, j)
         return scores

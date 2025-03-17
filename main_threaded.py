@@ -618,7 +618,11 @@ if __name__ == "__main__":
 
                             # QI test
                             if r in test_rounds[:,1]:
-                                QItest = QI_Test(cfg.Sim.n_clients, cfg.GT.n_tests, cfg.Data.n_classes, cfg.GT.QI_threshold, gt._get_test_matrix())
+                                if past_test_groups in locals():
+                                    QItest = QI_Test(cfg.Sim.n_clients, cfg.GT.n_tests, cfg.Data.n_classes, cfg.GT.QI_threshold, gt._get_test_matrix(), past_test_groups)
+                                else:
+                                    QItest = QI_Test(cfg.Sim.n_clients, cfg.GT.n_tests, cfg.Data.n_classes, cfg.GT.QI_threshold, gt._get_test_matrix())
+                                past_test_groups = gt._get_test_matrix()
                                 # only within round
                                 QI_inround_scores[np.where(test_rounds[:, 1] == r)[0][0]] = QItest.perform_QI_test_inround(all_group_accuracies_QI, np.where(test_rounds[:, 1] == r)[0][0])
                                 # accumulate within-round QI scores (without weighting)
